@@ -23,9 +23,6 @@ module Stones.App
   , Event(..)
   , TabId
   , startingState
-  , Doing(..)
-  , Job
-  , decide
   , update'
   , view'
   , application
@@ -36,6 +33,7 @@ module Stones.App
   )
 where
 
+import           Data.Bifunctor                 ( bimap )
 import           Data.List                      ( find )
 import           Data.Maybe                     ( mapMaybe )
 import           Data.Text                      ( Text )
@@ -61,8 +59,6 @@ import           GI.Gtk.Declarative.Adwaita.ToolbarView
                                                 , toolbarTop
                                                 )
 import           GI.Gtk.Declarative.App.Simple
-import           Data.Foldable                  ( traverse_ )
-import           Pipes                          ( lift )
 import qualified Pipes
 
 import           Go.Game
@@ -122,40 +118,9 @@ startingState opponents human = State { games     = []
 -- * Updating
 -------------
 
--- | What an event does to the window: where it leaves it, and what it
--- asks somebody to do, if anything.
---
--- The doing is an action rather than a thread that has been started,
--- so that deciding stays a function of its arguments. 'update'' is
--- this with the action handed to the application to run, which is the
--- only part that needs an application to be running.
-data Doing
-  = Carry State (Maybe Job)
-    -- ^ The window carries on from here, and this is what to do.
-  | Close
-    -- ^ The window ends.
-
--- | Something for the window to have done, and the events it answers
--- with. Letting an opponent go is the one that answers with none.
-type Job = IO [Event]
-
 update' :: State -> Event -> Transition State Event
-update' state event = case decide state event of
-  Close            -> Exit
-  -- The job is not named, so nothing stops it part way through. A
-  -- command is several lines of protocol, and a job stopped between
-  -- two of them would leave the answer to the first sitting in the
-  -- pipe, to be read as the answer to whatever was asked next.
-  Carry state' job -> Transition state' (maybe none doing job)
-
--- | Run a job, and hand the loop whatever it answered with.
-doing :: Job -> Cmd Event
-doing job = stream (lift job >>= traverse_ Pipes.yield)
-
--- | What one event does to the window.
-decide :: State -> Event -> Doing
-decide state = \case
-  Closed                       -> Close
+update' state = \case
+  Closed                       -> Exit
 
   NewTabPressed n              -> openTab state n
 
@@ -164,47 +129,46 @@ decide state = \case
 
   InTab tab event              -> inTab state tab (`step` event)
 
-  TabSelected key              -> carry state { showing = tabOf state key }
+  TabSelected key              -> Transition state { showing = tabOf state key } none
 
   TabClosePressed key          -> closeTab state key
 
-  TabsReordered keys           -> carry state { games = inOrder }
+  TabsReordered keys           -> Transition state { games = inOrder } none
     where inOrder = mapMaybe (withId state) (Vector.toList keys)
 
--- | The window carries on from here, with nothing to do.
-carry :: State -> Doing
-carry state = Carry state Nothing
-
--- | A step that changes the game and asks nobody anything.
-stayAt :: Session -> Step
-stayAt session = Step session Nothing
+-- | A game that has changed without anything being asked of anybody.
+stayAt :: Session -> Played
+stayAt session = Transition session none
 
 -- | Do something to the game in one tab.
+--
+-- A game answers with a transition of its own, and this lifts it: the
+-- new game goes back into the list it came from, and its events are
+-- addressed to the tab they came from.
 --
 -- An event for a tab that is not there is dropped. That is how an
 -- answer from an opponent whose tab was closed while it was thinking
 -- ends: the opponent was stopped, the answer it was in the middle of
 -- arrives as a failure, and there is no longer a game it is about.
-inTab :: State -> TabId -> (Session -> Step) -> Doing
+inTab :: State -> TabId -> (Session -> Played) -> Transition State Event
 inTab state tab move = case lookup tab state.games of
-  Nothing      -> carry state
-  Just session -> Carry state { games = replaced } job
+  Nothing      -> Transition state none
+  Just session -> bimap putBack (InTab tab) (move session)
    where
-    Step session' asked = move session
-    replaced =
-      [ (tab', if tab' == tab then session' else other)
-      | (tab', other) <- state.games
-      ]
-    job = fmap (fmap (pure . InTab tab . Answered)) asked
+    putBack played =
+      state { games = [ (tab', if tab' == tab then played else other)
+                      | (tab', other) <- state.games
+                      ]
+            }
 
 -- | Open a game on a board this wide, in a tab of its own.
-openTab :: State -> Int -> Doing
-openTab state n = Carry
+openTab :: State -> Int -> Transition State Event
+openTab state n = Transition
   state { games   = state.games <> [(tab, starting human n)]
         , showing = Just tab
         , nextTab = tab + 1
         }
-  (Just (pure . TabOpened tab <$> state.opponents.open n))
+  (perform (Just . TabOpened tab <$> state.opponents.open n))
  where
   tab   = state.nextTab
   human = state.human
@@ -217,13 +181,13 @@ openTab state n = Carry
 -- because an ending window does nothing else afterwards: what stops it
 -- is the same thing that stops the opponents of any tabs still open,
 -- which is whatever handed this window its 'Opponents'.
-closeTab :: State -> Text -> Doing
+closeTab :: State -> Text -> Transition State Event
 closeTab state key = case withId state key of
-  Nothing             -> carry state
+  Nothing             -> Transition state none
   Just (tab, session) -> case remaining of
-    [] -> Close
-    _  -> Carry state { games = remaining, showing = showing' }
-                (release state.opponents session)
+    [] -> Exit
+    _  -> Transition state { games = remaining, showing = showing' }
+                     (release state.opponents session)
    where
     remaining = [ open | open <- state.games, fst open /= tab ]
     -- Showing the tab that took the closed one's place, or the last
@@ -237,13 +201,13 @@ closeTab state key = case withId state key of
 -- An opponent that is thinking is stopped in the middle of it. That is
 -- what stopping is for, and the answer it was about to give arrives at
 -- a tab that is no longer there, where it is dropped.
-release :: Opponents -> Session -> Maybe Job
+release :: Opponents -> Session -> Cmd Event
 release opponents session = case session.opponent of
-  Idle    engine -> Just (letGo engine)
-  Waiting engine -> Just (letGo engine)
-  Starting       -> Nothing
-  Gone _         -> Nothing
-  where letGo engine = [] <$ opponents.close engine
+  Idle    engine -> letGo engine
+  Waiting engine -> letGo engine
+  Starting       -> none
+  Gone _         -> none
+  where letGo engine = perform (Nothing <$ opponents.close engine)
 
 -- | The tab after this one, or the one before it when this is the
 -- last.
