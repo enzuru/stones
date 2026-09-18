@@ -155,6 +155,22 @@ with anything. That is why a field can be called `board` in three
 records at once, and why the one place that needs a selector as a value
 writes it as a section, `(.close)`.
 
+A game is a part of the window, and it says so in its type. Its update
+answers with a `Transition Session SessionEvent`, and the window lifts
+that into one of its own:
+
+```haskell
+inTab state tab move = bimap putBack (InTab tab) (move session)
+```
+
+Nothing a game asks of its opponent runs under a name. A named job
+stops whatever was running under that name, and what a game asks for is
+several lines of protocol: one stopped between two of them would leave
+the answer to the first in the pipe, to be read as the answer to
+whatever was asked next. A window that did name them would need
+`qualifying` as well, because a name is shared by everything the loop
+runs and this window holds a game per tab.
+
 ## Playing on a server
 
 Everything the program asks of an opponent is one of the seven actions

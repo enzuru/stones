@@ -20,7 +20,7 @@ module Stones.Session
   , Note(..)
   , SessionEvent(..)
   , Reply(..)
-  , Step(..)
+  , Played
   , starting
   , opened
   , couldNotOpen
@@ -38,6 +38,11 @@ import           Data.Text                      ( Text )
 
 import           Go.Game
 import           Go.Types
+import           GI.Gtk.Declarative.App.Simple   ( Transition(..)
+                                                , none
+                                                , perform
+                                                )
+
 import           Stones.Engine
 
 -- | Where a game's opponent is up to.
@@ -105,15 +110,13 @@ data Reply
     -- ^ It could not do as it was told.
   deriving (Show)
 
--- | Where a game stands after an event, and what to ask its opponent.
+-- | Where a game goes when something happens to it.
 --
--- The asking is an action rather than a started thread, so that this
--- module stays a function of its arguments and the window decides when
--- and where it runs.
-data Step = Step
-  { session :: Session
-  , ask     :: Maybe (IO Reply)
-  }
+-- A game is a part of a window, so it answers with a transition of its
+-- own, which the window lifts into one of its own with 'bimap'. The
+-- 'GI.Gtk.Declarative.App.Simple.Exit' case belongs to the window: a
+-- game never ends the program, and nothing here answers with it.
+type Played = Transition Session SessionEvent
 
 -- | A game on a board this wide, waiting for an opponent to be
 -- started for it.
@@ -128,7 +131,7 @@ starting human n = Session { game     = newGame n
 --
 -- A player with White has the opponent open the game, so the first
 -- thing that happens to this game is a question rather than a click.
-opened :: Engine -> Session -> Step
+opened :: Engine -> Session -> Played
 opened engine session
   | game.turn == session.human = stay
     session { opponent = Idle engine }
@@ -183,7 +186,7 @@ canUndo session = case session.opponent of
 -------------
 
 -- | What one event does to a game.
-step :: Session -> SessionEvent -> Step
+step :: Session -> SessionEvent -> Played
 step session = \case
   Clicked coord  -> humanMove session (Play coord)
   Passed         -> humanMove session Pass
@@ -192,21 +195,28 @@ step session = \case
   Answered reply -> answered session reply
 
 -- | The game stands here, and nothing is asked of anybody.
-stay :: Session -> Step
-stay session = Step session Nothing
+stay :: Session -> Played
+stay session = Transition session none
 
 -- | The game stands here, and the opponent has been asked this.
 --
 -- Anything the window had to say is cleared: a refusal is about the
 -- click before this one, and a score is about a game that has ended,
 -- which is not a game anybody is being asked to move in.
-asking :: Session -> Engine -> IO Reply -> Step
-asking session engine job = Step
+--
+-- The job runs under no name. A named job stops whatever is running
+-- under that name, and what is asked here is several lines of
+-- protocol: one stopped between two of them would leave the answer to
+-- the first sitting in the pipe, to be read as the answer to whatever
+-- was asked next. Nothing here needs 'qualifying' for the same reason,
+-- even though a window holds several of these at once.
+asking :: Session -> Engine -> IO Reply -> Played
+asking session engine job = Transition
   session { opponent = Waiting engine, note = Nothing }
-  (Just job)
+  (perform (Just . Answered <$> job))
 
 -- | The player's own move.
-humanMove :: Session -> Move -> Step
+humanMove :: Session -> Move -> Played
 humanMove session move = case ready session of
   Nothing     -> stay session
   Just engine -> case playMove human move session.game of
@@ -224,7 +234,7 @@ humanMove session move = case ready session of
 --
 -- There is nothing to tell the opponent: the protocol has no command
 -- for a resignation, and there is no next move to ask for.
-resign :: Session -> Step
+resign :: Session -> Played
 resign session = case ready session of
   Nothing     -> stay session
   Just engine -> case playMove human Resign session.game of
@@ -242,7 +252,7 @@ resign session = case ready session of
 -- leave the player looking at their own move with the opponent about
 -- to answer it again. Two is the usual number, and one is what is
 -- there to take back when the opponent opened the game.
-takeBack :: Session -> Step
+takeBack :: Session -> Played
 takeBack session = case session.opponent of
   Idle engine -> case rewind human session.game of
     Nothing            -> stay session
@@ -253,7 +263,7 @@ takeBack session = case session.opponent of
   where human = session.human
 
 -- | What the opponent answered.
-answered :: Session -> Reply -> Step
+answered :: Session -> Reply -> Played
 answered session reply = case session.opponent of
   -- An answer with nobody waiting for it belongs to a game that has
   -- moved on since the question, so there is nothing to do with it.
@@ -269,7 +279,7 @@ freed :: Engine -> Session -> Session
 freed engine session = session { opponent = Idle engine }
 
 -- | The opponent's move, which is played on this board too.
-opponentMove :: Session -> Engine -> Move -> Step
+opponentMove :: Session -> Engine -> Move -> Played
 opponentMove session engine move = case move of
   Resign -> stay (freed engine session { game = resigned })
   _      -> case playMove them move session.game of

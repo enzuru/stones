@@ -4,6 +4,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
 -- | What each thing the player does turns one game into.
@@ -17,9 +18,14 @@ module SessionTest
   )
 where
 
-import           Data.Maybe                     ( isJust )
 import           Data.Text                      ( Text )
+import           GI.Gtk.Declarative.App.Simple   ( Cmd
+                                                , Transition(..)
+                                                , jobsOf
+                                                , none
+                                                )
 import           Hedgehog
+import qualified Pipes.Prelude                 as Pipes
 
 import           Go.Game
 import           Go.Types
@@ -42,19 +48,26 @@ silent = Engine { name    = "nobody"
 
 -- | A 9x9 game, played as Black, whose opponent has just started.
 game :: Session
-game = (opened silent (starting Black 9)).session
+game = landed (opened silent (starting Black 9))
 
 -- | The same, against an opponent that answers differently.
 gameWith :: Engine -> Session
-gameWith engine = (opened engine (starting Black 9)).session
+gameWith engine = landed (opened engine (starting Black 9))
 
--- | Run what a step asks of the opponent, and answer with what it
+-- | Run what a game asks of its opponent, and answer with what it
 -- said. These are the only tests that run one: the rest are about
 -- where the game lands, which is decided before anything is asked.
-ran :: Step -> PropertyT IO Reply
-ran given = case given.ask of
-  Nothing  -> annotate "nothing was asked" >> failure
-  Just job -> evalIO job
+--
+-- The job has to run under no name. A named job stops whatever is
+-- running under that name, and nothing a game asks for can be stopped
+-- part way through.
+ran :: Played -> PropertyT IO Reply
+ran given = case jobsOf (commandOf given) of
+  [(Nothing, job)] -> evalIO (Pipes.toListM job) >>= \case
+    [Answered reply] -> pure reply
+    answers          -> annotateShow answers >> failure
+  []    -> annotate "nothing was asked" >> failure
+  other -> annotateShow (map fst other) >> failure
 
 -- | Why a game stopped, if it did.
 brokenBecause :: Session -> Maybe Text
@@ -62,13 +75,28 @@ brokenBecause session = case session.opponent of
   Gone why -> Just why
   _        -> Nothing
 
+-- | Whether a transition asked for anything.
+asked' :: Played -> Bool
+asked' = not . null . jobsOf . commandOf
+
+-- | The command a transition answers with.
+commandOf :: Played -> Cmd SessionEvent
+commandOf (Transition _ cmd) = cmd
+commandOf Exit               = none
+
+-- | The game a transition leaves behind. Nothing a game does ends the
+-- window, so the other case cannot happen.
+landed :: Played -> Session
+landed (Transition session _) = session
+landed Exit                   = error "a game ended the window"
+
 -- | Where a game lands after an event.
 after :: Session -> SessionEvent -> Session
-after session event = (step session event).session
+after session event = landed (step session event)
 
 -- | Whether an event asked the opponent anything.
 asked :: Session -> SessionEvent -> Bool
-asked session event = isJust ((step session event).ask)
+asked session event = not (null (jobsOf (commandOf (step session event))))
 
 prop_aStartedGameIsThePlayersToMove :: Property
 prop_aStartedGameIsThePlayersToMove = withTests 1 . property $ do
@@ -83,8 +111,8 @@ prop_theOpponentOpensWhenThePlayerHasWhite = withTests 1 . property $ do
   let opening = opened silent (starting White 13)
   -- Black moves first, so a player with White waits, and the opening
   -- move is asked for rather than clicked.
-  playable opening.session === False
-  assert (isJust opening.ask)
+  playable (landed opening) === False
+  assert (asked' opening)
 
 prop_aMoveGoesDownAndTheOpponentIsAsked :: Property
 prop_aMoveGoesDownAndTheOpponentIsAsked = withTests 1 . property $ do
@@ -261,7 +289,7 @@ prop_takingBackToTheOpponentsTurnAsksItToMove :: Property
 prop_takingBackToTheOpponentsTurnAsksItToMove = withTests 1 . property $ do
   -- The player has White, so the opponent opened. There is one move to
   -- take back, and taking it back leaves the opponent to play again.
-  let opening  = (opened silent (starting White 9)).session
+  let opening  = landed (opened silent (starting White 9))
       answered = after opening (Answered (Moved (Play (Coord 3 3))))
   canUndo answered === True
   reply <- ran (step answered UndoPressed)

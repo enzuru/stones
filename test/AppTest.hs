@@ -13,6 +13,7 @@ module AppTest
   )
 where
 
+import           Data.Foldable                  ( traverse_ )
 import           Data.IORef
 import           Data.Text                      ( Text )
 import           Hedgehog
@@ -20,7 +21,10 @@ import qualified Pipes.Prelude                 as Pipes
 import qualified Data.Vector                   as Vector
 
 import           GI.Gtk.Declarative.App.Simple  ( App(..)
+                                                , Cmd
                                                 , Transition(..)
+                                                , jobsOf
+                                                , none
                                                 )
 
 import           Go.Game
@@ -63,11 +67,22 @@ countingSource = do
 
 -- | Run what an event asked somebody to do, and answer with the events
 -- it came back with.
+--
+-- The jobs run under no name, here and in a game, because nothing this
+-- window asks for can be stopped part way through. A window that named
+-- them would want 'qualifying' as well, since a name is shared by
+-- everything the loop runs and this window holds a game per tab.
 ran :: State -> Event -> PropertyT IO [Event]
-ran state event = case decide state event of
-  Close              -> annotate "the window closed" >> failure
-  Carry _ Nothing    -> annotate "nothing was asked" >> failure
-  Carry _ (Just job) -> evalIO job
+ran state event = case jobsOf (commandOf (update' state event)) of
+  []    -> annotate "nothing was asked" >> failure
+  named -> do
+    map fst named === map (const Nothing) named
+    concat <$> traverse (evalIO . Pipes.toListM . snd) named
+
+-- | The command a transition answers with.
+commandOf :: Transition state event -> Cmd event
+commandOf (Transition _ cmd) = cmd
+commandOf Exit               = none
 
 -- | A window with nothing open in it, playing Black.
 empty' :: State
@@ -196,11 +211,16 @@ prop_anOpponentThatWillNotStartBreaksOnlyItsOwnTab = withTests 1 . property $ do
 
 -- | A game against the silent opponent, ready for the player to move.
 started :: Session
-started = (opened silent (starting Black 9)).session
+started = landed (opened silent (starting Black 9))
+
+-- | The game a transition leaves behind.
+landed :: Played -> Session
+landed (Transition session _) = session
+landed Exit                   = error "a game ended the window"
 
 -- | Where a game lands after one thing happens to it.
 onceMore :: Session -> SessionEvent -> Session
-onceMore session event = (step session event).session
+onceMore session event = landed (step session event)
 
 prop_theTitleSaysWhoseTurnItIs :: Property
 prop_theTitleSaysWhoseTurnItIs = withTests 1 . property $ do
@@ -368,9 +388,8 @@ prop_closingTabsWithNoOpponentStopsNothing = withTests 1 . property $ do
 prop_closingATabWithNoOpponentYetStopsNothing :: Property
 prop_closingATabWithNoOpponentYetStopsNothing = withTests 1 . property $ do
   let opening = next oneGame (NewTabPressed 19)
-  case decide opening (TabClosePressed "game-2") of
-    Carry _ Nothing -> success
-    _               -> annotate "it asked for something" >> failure
+  null (jobsOf (commandOf (update' opening (TabClosePressed "game-2"))))
+    === True
 
 prop_theWindowSendsItselfItsFirstGame :: Property
 prop_theWindowSendsItselfItsFirstGame = withTests 1 . property $ do
@@ -394,9 +413,10 @@ prop_theWindowIsWiredToItsOwnUpdateAndView = withTests 1 . property $ do
 -- window landed. This is what the application does, without the
 -- window.
 acting :: State -> Event -> IO State
-acting state event = case decide state event of
-  Close            -> pure state
-  Carry state' job -> state' <$ sequence_ job
+acting state event = case update' state event of
+  Exit                -> pure state
+  Transition state' cmd ->
+    state' <$ traverse_ (Pipes.toListM . snd) (jobsOf cmd)
 
 tests :: Group
 tests = $$(discover)
