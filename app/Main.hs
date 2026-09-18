@@ -15,19 +15,27 @@ module Main
   )
 where
 
-import           Control.Monad                  ( void )
+import           Control.Monad                  ( void
+                                                , when
+                                                )
+import           Data.Foldable                  ( for_ )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import qualified Data.Text.IO                  as Text
+import           System.Directory               ( doesDirectoryExist )
 import           System.Environment             ( getArgs
                                                 , getProgName
+                                                , lookupEnv
                                                 )
+import           System.FilePath                ( (</>) )
 import           System.Exit                    ( exitFailure
                                                 , exitSuccess
                                                 )
 
 import qualified GI.Adw                        as Adw
+import qualified GI.Gdk                        as Gdk
 import qualified GI.Gio                        as Gio
+import qualified GI.Gtk                        as Gtk
 import           GI.Gtk.Declarative.App.Simple  ( startInApplication )
 
 import           Go.Types
@@ -68,16 +76,42 @@ main = do
           GnuGo.withGnuGo (optionProgram options) (optionLevel options)
             $ \opponents -> do
                 application <- Adw.applicationNew
-                  (Just "com.github.enzuru.Stones")
+                  (Just identifier)
                   [Gio.ApplicationFlagsDefaultFlags]
-                _ <- Gio.onApplicationActivate application . void
-                  $ startInApplication
-                      application
-                      (Stones.application opponents
-                                          (optionColor options)
-                                          (optionSize options)
-                      )
+                _ <- Gio.onApplicationActivate application $ do
+                  useOwnIcon
+                  void $ startInApplication
+                    application
+                    (Stones.application opponents
+                                        (optionColor options)
+                                        (optionSize options)
+                    )
                 void (Gio.applicationRun application Nothing)
+
+-- | The name the desktop knows this program by, which is the name of
+-- its icon and of the file that describes it.
+identifier :: Text
+identifier = "com.github.enzuru.Stones"
+
+-- | Show the program's own icon rather than whatever a window with no
+-- icon gets.
+--
+-- An installed copy is found by name, because its icon sits in a
+-- directory the theme already looks in. A copy being worked on is not,
+-- so the directory it was built in is added to the ones the theme
+-- looks in. @STONES_DATA_DIR@ says where that is, and @data@ beside
+-- the working directory is where it is when the program is run from
+-- its own source.
+useOwnIcon :: IO ()
+useOwnIcon = do
+  told    <- lookupEnv "STONES_DATA_DIR"
+  display <- Gdk.displayGetDefault
+  for_ display $ \display' -> do
+    theme <- Gtk.iconThemeGetForDisplay display'
+    let icons = maybe "data" id told </> "icons"
+    there <- doesDirectoryExist icons
+    when there (Gtk.iconThemeAddSearchPath theme icons)
+  Gtk.windowSetDefaultIconName identifier
 
 -- | Say what went wrong and stop.
 failWith :: Text -> IO a

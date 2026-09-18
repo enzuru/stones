@@ -28,6 +28,7 @@ import           System.Exit                    ( exitFailure )
 import           System.IO
 
 import qualified GobanWidgetTest
+import qualified IconTest
 import qualified WindowTest
 
 main :: IO ()
@@ -47,7 +48,7 @@ main = do
     -- Sequentially: every one of these hands work to the main loop and
     -- waits for it, and two of them doing that at once would deadlock.
     results <- traverse checkSequential
-                        [WindowTest.tests, GobanWidgetTest.tests]
+                        [WindowTest.tests, GobanWidgetTest.tests, IconTest.tests]
     GLib.mainLoopQuit loop
     putMVar passed (and results)
   GLib.mainLoopRun loop

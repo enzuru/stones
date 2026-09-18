@@ -1,0 +1,10 @@
+<!-- SPDX-FileCopyrightText: 2026 Elias Khanzada
+     SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- A stone of each colour, which is as much of a board as fits in
+       sixteen pixels: the one that is filled and the one that is not. -->
+  <path d="M 1 11 a 4 4 0 1 0 8 0 a 4 4 0 1 0 -8 0 Z"/>
+  <path fill-rule="evenodd"
+        d="M 7 5 a 4 4 0 1 0 8 0 a 4 4 0 1 0 -8 0 Z
+           M 9.1 5 a 1.9 1.9 0 1 0 3.8 0 a 1.9 1.9 0 1 0 -3.8 0 Z"/>
+</svg>
