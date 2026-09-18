@@ -1,6 +1,10 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
+
 -- | What the program needs from an opponent.
 --
 -- Everything the application does to an opponent is one of the seven
@@ -32,27 +36,27 @@ import           Go.Types
 -- knows what is still running when the window closes, so the two
 -- belong together.
 data Opponents = Opponents
-  { openOpponent  :: Int -> IO (Either Text Engine)
+  { open  :: Int -> IO (Either Text Engine)
     -- ^ An opponent of its own, for a game on a board this wide.
-  , closeOpponent :: Engine -> IO ()
+  , close :: Engine -> IO ()
     -- ^ Let one go, when the game it was playing has closed.
   }
 
 -- | An opponent, and the handful of things that can be asked of one.
 data Engine = Engine
-  { engineName    :: Text
+  { name    :: Text
     -- ^ What to call this opponent in the window.
-  , engineNewGame :: Int -> IO (Either Text ())
+  , newGame :: Int -> IO (Either Text ())
     -- ^ Clear the board and play on one of this width from now on.
-  , engineNotify  :: Color -> Move -> IO (Either Text ())
+  , notify  :: Color -> Move -> IO (Either Text ())
     -- ^ Tell the opponent about a move somebody else made.
-  , engineGenMove :: Color -> IO (Either Text Move)
+  , genMove :: Color -> IO (Either Text Move)
     -- ^ Ask the opponent for a move of its own, which it also plays.
-  , engineUndo    :: Int -> IO (Either Text ())
+  , undo    :: Int -> IO (Either Text ())
     -- ^ Take this many moves back off the opponent's board.
-  , engineScore   :: IO (Either Text Text)
+  , score   :: IO (Either Text Text)
     -- ^ What the opponent makes the score, once the game has ended.
-  , engineClose   :: IO ()
+  , close   :: IO ()
     -- ^ Let the opponent go. This does not fail: there is nothing the
     -- application would do about it.
   }

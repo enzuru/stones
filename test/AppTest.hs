@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
@@ -29,19 +31,19 @@ import           Stones.Session
 
 -- | An opponent that does nothing and says so.
 silent :: Engine
-silent = Engine { engineName    = "nobody"
-                , engineNewGame = \_ -> pure (Right ())
-                , engineNotify  = \_ _ -> pure (Right ())
-                , engineGenMove = \_ -> pure (Right Pass)
-                , engineUndo    = \_ -> pure (Right ())
-                , engineScore   = pure (Right "0")
-                , engineClose   = pure ()
+silent = Engine { name    = "nobody"
+                , newGame = \_ -> pure (Right ())
+                , notify  = \_ _ -> pure (Right ())
+                , genMove = \_ -> pure (Right Pass)
+                , undo    = \_ -> pure (Right ())
+                , score   = pure (Right "0")
+                , close   = pure ()
                 }
 
 -- | A source of opponents that hands out the same silent one.
 source :: Opponents
-source = Opponents { openOpponent  = \_ -> pure (Right silent)
-                   , closeOpponent = \_ -> pure ()
+source = Opponents { open  = \_ -> pure (Right silent)
+                   , close = \_ -> pure ()
                    }
 
 -- | A source that writes down what it hands out and what it is given
@@ -53,8 +55,8 @@ countingSource = do
   let handedOut  = modifyIORef' counts (\(out, back) -> (out + 1, back))
       handedBack = modifyIORef' counts (\(out, back) -> (out, back + 1))
   pure
-    ( Opponents { openOpponent  = \_ -> Right silent <$ handedOut
-                , closeOpponent = \_ -> handedBack
+    ( Opponents { open  = \_ -> Right silent <$ handedOut
+                , close = \_ -> handedBack
                 }
     , counts
     )
@@ -91,20 +93,20 @@ oneGame = next (next empty' (NewTabPressed 9)) (TabOpened 1 (Right silent))
 
 -- | Why the game in a tab stopped, if it did.
 brokenBecause :: Session -> Maybe Text
-brokenBecause session = case sessionOpponent session of
+brokenBecause session = case session.opponent of
   Gone why -> Just why
   _        -> Nothing
 
 -- | The game in this tab.
 gameIn :: TabId -> State -> Maybe Session
-gameIn tab state = lookup tab (stateGames state)
+gameIn tab state = lookup tab state.games
 
 prop_theFirstTabIsOpenedAndShown :: Property
 prop_theFirstTabIsOpenedAndShown = withTests 1 . property $ do
   let opening = next empty' (NewTabPressed 9)
-  map fst (stateGames empty') === []
-  map fst (stateGames opening) === [1]
-  stateShowing opening === Just 1
+  map fst empty'.games === []
+  map fst opening.games === [1]
+  opening.showing === Just 1
   -- It has no opponent until one has started, so it takes no moves.
   fmap playable (gameIn 1 opening) === Just False
   fmap playable (gameIn 1 oneGame) === Just True
@@ -113,8 +115,8 @@ prop_eachTabGetsAGameAndAnOpponentOfItsOwn :: Property
 prop_eachTabGetsAGameAndAnOpponentOfItsOwn = withTests 1 . property $ do
   let two   = next oneGame (NewTabPressed 19)
       ready' = next two (TabOpened 2 (Right silent))
-  map fst (stateGames ready') === [1, 2]
-  stateShowing ready' === Just 2
+  map fst ready'.games === [1, 2]
+  ready'.showing === Just 2
   fmap sessionSize (gameIn 1 ready') === Just 9
   fmap sessionSize (gameIn 2 ready') === Just 19
 
@@ -122,8 +124,8 @@ prop_aMoveGoesToTheTabItWasPlayedIn :: Property
 prop_aMoveGoesToTheTabItWasPlayedIn = withTests 1 . property $ do
   let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
       played = next two (InTab 1 (Clicked (Coord 3 3)))
-  fmap (gameLast . sessionGame) (gameIn 1 played) === Just (Just (Coord 3 3))
-  fmap (gameLast . sessionGame) (gameIn 2 played) === Just Nothing
+  fmap (\s -> s.game.last) (gameIn 1 played) === Just (Just (Coord 3 3))
+  fmap (\s -> s.game.last) (gameIn 2 played) === Just Nothing
 
 prop_anAnswerForAClosedTabIsDropped :: Property
 prop_anAnswerForAClosedTabIsDropped = withTests 1 . property $ do
@@ -132,24 +134,24 @@ prop_anAnswerForAClosedTabIsDropped = withTests 1 . property $ do
   let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
       closed = next two (TabClosePressed "game-1")
       stray  = next closed (InTab 1 (Answered (Failed "stopped")))
-  map fst (stateGames closed) === [2]
-  map fst (stateGames stray) === [2]
-  stateShowing stray === Just 2
+  map fst closed.games === [2]
+  map fst stray.games === [2]
+  stray.showing === Just 2
 
 prop_closingTheShowingTabShowsAnother :: Property
 prop_closingTheShowingTabShowsAnother = withTests 1 . property $ do
   let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
       first' = next two (TabSelected "game-1")
       closed = next first' (TabClosePressed "game-1")
-  stateShowing first' === Just 1
-  stateShowing closed === Just 2
+  first'.showing === Just 1
+  closed.showing === Just 2
 
 prop_closingAnotherTabLeavesTheShowingOneAlone :: Property
 prop_closingAnotherTabLeavesTheShowingOneAlone = withTests 1 . property $ do
   let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
       closed = next two (TabClosePressed "game-1")
-  stateShowing two === Just 2
-  stateShowing closed === Just 2
+  two.showing === Just 2
+  closed.showing === Just 2
 
 prop_theWindowClosesWithItsLastTab :: Property
 prop_theWindowClosesWithItsLastTab = withTests 1 . property $ do
@@ -160,8 +162,8 @@ prop_theWindowClosesWithItsLastTab = withTests 1 . property $ do
 
 prop_aTabNameNothingAnswersToIsIgnored :: Property
 prop_aTabNameNothingAnswersToIsIgnored = withTests 1 . property $ do
-  map fst (stateGames (next oneGame (TabClosePressed "game-99"))) === [1]
-  stateShowing (next oneGame (TabSelected "game-99")) === Nothing
+  map fst ((next oneGame (TabClosePressed "game-99")).games) === [1]
+  (next oneGame (TabSelected "game-99")).showing === Nothing
 
 prop_tabNamesAreNotReusedWhenATabCloses :: Property
 prop_tabNamesAreNotReusedWhenATabCloses = withTests 1 . property $ do
@@ -170,14 +172,14 @@ prop_tabNamesAreNotReusedWhenATabCloses = withTests 1 . property $ do
   let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
       closed = next two (TabClosePressed "game-1")
       third  = next closed (NewTabPressed 9)
-  map fst (stateGames third) === [2, 3]
+  map fst third.games === [2, 3]
 
 prop_draggingATabChangesTheOrder :: Property
 prop_draggingATabChangesTheOrder = withTests 1 . property $ do
   let two      = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
       reordered = next two (TabsReordered (Vector.fromList ["game-2", "game-1"]))
-  map fst (stateGames two) === [1, 2]
-  map fst (stateGames reordered) === [2, 1]
+  map fst two.games === [1, 2]
+  map fst reordered.games === [2, 1]
   -- The games themselves move with their tabs.
   fmap sessionSize (gameIn 2 reordered) === Just 19
 
@@ -194,11 +196,11 @@ prop_anOpponentThatWillNotStartBreaksOnlyItsOwnTab = withTests 1 . property $ do
 
 -- | A game against the silent opponent, ready for the player to move.
 started :: Session
-started = stepSession (opened silent (starting Black 9))
+started = (opened silent (starting Black 9)).session
 
 -- | Where a game lands after one thing happens to it.
 onceMore :: Session -> SessionEvent -> Session
-onceMore session event = stepSession (step session event)
+onceMore session event = (step session event).session
 
 prop_theTitleSaysWhoseTurnItIs :: Property
 prop_theTitleSaysWhoseTurnItIs = withTests 1 . property $ do
@@ -244,8 +246,8 @@ prop_aWindowWithNoGameShowingSaysSo :: Property
 prop_aWindowWithNoGameShowingSaysSo = withTests 1 . property $ do
   -- The window before its first tab has opened, and after a tab has
   -- been selected by a name nothing answers to.
-  stateShowing empty' === Nothing
-  map fst (stateGames empty') === []
+  empty'.showing === Nothing
+  map fst empty'.games === []
 
 prop_closingTheWindowEndsIt :: Property
 prop_closingTheWindowEndsIt = withTests 1 . property $ do
@@ -259,16 +261,16 @@ prop_aTabWhoseOpponentIsStillStartingCanBeClosed =
     -- the tab away.
     let opening = next oneGame (NewTabPressed 19)
         closed  = next opening (TabClosePressed "game-2")
-    map fst (stateGames opening) === [1, 2]
-    map fst (stateGames closed) === [1]
-    stateShowing closed === Just 1
+    map fst opening.games === [1, 2]
+    map fst closed.games === [1]
+    closed.showing === Just 1
 
 prop_aTabWhoseOpponentIsGoneCanBeClosed :: Property
 prop_aTabWhoseOpponentIsGoneCanBeClosed = withTests 1 . property $ do
   let broken = next (next oneGame (NewTabPressed 19))
                     (TabOpened 2 (Left "no such program"))
       closed = next broken (TabClosePressed "game-2")
-  map fst (stateGames closed) === [1]
+  map fst closed.games === [1]
 
 prop_closingATabWhileItsOpponentThinksStopsItToo :: Property
 prop_closingATabWhileItsOpponentThinksStopsItToo =
@@ -277,7 +279,7 @@ prop_closingATabWhileItsOpponentThinksStopsItToo =
                         (TabOpened 2 (Right silent))
         thinking = next two (InTab 1 (Clicked (Coord 3 3)))
         closed   = next thinking (TabClosePressed "game-1")
-    map fst (stateGames closed) === [2]
+    map fst closed.games === [2]
 
 prop_closingTheLastTabInTheListShowsTheOneBeforeIt :: Property
 prop_closingTheLastTabInTheListShowsTheOneBeforeIt =
@@ -285,9 +287,9 @@ prop_closingTheLastTabInTheListShowsTheOneBeforeIt =
     let two    = next (next oneGame (NewTabPressed 19))
                       (TabOpened 2 (Right silent))
         closed = next two (TabClosePressed "game-2")
-    stateShowing two === Just 2
-    map fst (stateGames closed) === [1]
-    stateShowing closed === Just 1
+    two.showing === Just 2
+    map fst closed.games === [1]
+    closed.showing === Just 1
 
 prop_reorderingByNamesNothingAnswersToKeepsWhatItKnows :: Property
 prop_reorderingByNamesNothingAnswersToKeepsWhatItKnows =
@@ -297,7 +299,7 @@ prop_reorderingByNamesNothingAnswersToKeepsWhatItKnows =
         odd' = next two (TabsReordered (Vector.fromList ["game-2", "game-99"]))
     -- A name nothing answers to brings no game with it, so it drops
     -- out rather than becoming a tab with nothing in it.
-    map fst (stateGames odd') === [2]
+    map fst odd'.games === [2]
 
 -- * What the window asks somebody to do
 -----------------------------------------
@@ -306,7 +308,7 @@ prop_openingATabStartsAnOpponentForIt :: Property
 prop_openingATabStartsAnOpponentForIt = withTests 1 . property $ do
   answer <- ran empty' (NewTabPressed 9)
   case answer of
-    [TabOpened 1 (Right engine)] -> engineName engine === "nobody"
+    [TabOpened 1 (Right engine)] -> engine.name === "nobody"
     _ -> annotate "it did not start one" >> failure
 
 prop_aMoveIsPutToTheOpponentOfItsOwnTab :: Property
@@ -383,9 +385,9 @@ prop_theWindowSendsItselfItsFirstGame = withTests 1 . property $ do
 prop_theWindowIsWiredToItsOwnUpdateAndView :: Property
 prop_theWindowIsWiredToItsOwnUpdateAndView = withTests 1 . property $ do
   let built = application source White 9
-  stateHuman (initialState built) === White
+  (initialState built).human === White
   case update built (initialState built) (NewTabPressed 9) of
-    Transition state' _ -> map fst (stateGames state') === [1]
+    Transition state' _ -> map fst state'.games === [1]
     Exit                -> annotate "it exited" >> failure
 
 -- | Take an event, do whatever it asked for, and answer with where the

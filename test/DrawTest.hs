@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
@@ -34,16 +36,16 @@ boardOf :: Int -> [(Color, (Int, Int))] -> Board
 boardOf n = foldl put (emptyBoard n)
  where
   put board (color, (x, y)) = case place color (Coord x y) board of
-    Right placement -> placedBoard placement
+    Right placement -> placement.after
     Left  _         -> board
 
 -- | An ordinary board to draw: a few stones, coordinates on, and the
 -- player to move.
 shown :: GobanProps
-shown = GobanProps { gobanBoard = boardOf 9 [(Black, (2, 2)), (White, (4, 4))]
-                   , gobanLast        = Nothing
-                   , gobanHover       = Just Black
-                   , gobanCoordinates = True
+shown = GobanProps { board = boardOf 9 [(Black, (2, 2)), (White, (4, 4))]
+                   , last        = Nothing
+                   , hover       = Just Black
+                   , coordinates = True
                    }
 
 -- | Draw a board onto a surface this size, and answer with its pixels.
@@ -70,12 +72,12 @@ blank = ByteString.all (== 0)
 prop_everyBoardSizeDrawsSomething :: Property
 prop_everyBoardSizeDrawsSomething = property $ do
   n       <- forAll (Gen.element [9, 13, 19])
-  surface <- evalIO (drawn shown { gobanBoard = emptyBoard n })
+  surface <- evalIO (drawn shown { board = emptyBoard n })
   assert (not (blank surface))
 
 prop_aStoneChangesThePicture :: Property
 prop_aStoneChangesThePicture = withTests 1 . property $ do
-  bare    <- evalIO (drawn shown { gobanBoard = emptyBoard 9 })
+  bare    <- evalIO (drawn shown { board = emptyBoard 9 })
   stoned  <- evalIO (drawn shown)
   assert (bare /= stoned)
 
@@ -84,8 +86,8 @@ prop_theLastStoneIsMarked = withTests 1 . property $ do
   -- The mark is drawn in whatever stands out against the stone it goes
   -- on, so it is drawn twice: once on Black and once on White.
   plain <- evalIO (drawn shown)
-  black <- evalIO (drawn shown { gobanLast = Just (Coord 2 2) })
-  white <- evalIO (drawn shown { gobanLast = Just (Coord 4 4) })
+  black <- evalIO (drawn shown { last = Just (Coord 2 2) })
+  white <- evalIO (drawn shown { last = Just (Coord 4 4) })
   assert (plain /= black)
   assert (plain /= white)
   assert (black /= white)
@@ -96,13 +98,13 @@ prop_aMarkOnAnEmptyPointDrawsNothing = withTests 1 . property $ do
   -- stone on it has nothing to mark, which is what an undone game
   -- looks like for a moment.
   plain  <- evalIO (drawn shown)
-  marked <- evalIO (drawn shown { gobanLast = Just (Coord 7 7) })
+  marked <- evalIO (drawn shown { last = Just (Coord 7 7) })
   plain === marked
 
 prop_theCoordinatesCanBeLeftOff :: Property
 prop_theCoordinatesCanBeLeftOff = withTests 1 . property $ do
   with'    <- evalIO (drawn shown)
-  without  <- evalIO (drawn shown { gobanCoordinates = False })
+  without  <- evalIO (drawn shown { coordinates = False })
   assert (with' /= without)
 
 prop_theDarkBoardIsADifferentBoard :: Property
@@ -119,7 +121,7 @@ prop_theFaintStoneFollowsThePointer = withTests 1 . property $ do
 
 prop_thereIsNoFaintStoneWhenItIsNotYourTurn :: Property
 prop_thereIsNoFaintStoneWhenItIsNotYourTurn = withTests 1 . property $ do
-  let waiting = shown { gobanHover = Nothing }
+  let waiting = shown { hover = Nothing }
   none' <- evalIO (pixels waiting False Nothing 400 400)
   over  <- evalIO (pixels waiting False (Just (Coord 6 6)) 400 400)
   none' === over
@@ -154,7 +156,7 @@ prop_anOblongWindowLeavesTheBoardSquare = withTests 1 . property $ do
 -- | Where the middle of a point is, in a widget this size.
 middleOf :: GobanProps -> Double -> Double -> Coord -> (Double, Double)
 middleOf props width height =
-  centreOf (geometry (size (gobanBoard props)) width height)
+  centreOf (geometry props.board.size width height)
 
 prop_aClickOnAnEmptyPointPlaysIt :: Property
 prop_aClickOnAnEmptyPointPlaysIt = property $ do
@@ -162,7 +164,7 @@ prop_aClickOnAnEmptyPointPlaysIt = property $ do
   y <- forAll (Gen.int (Range.linear 0 8))
   let wanted     = Coord x y
       (px, py)   = middleOf shown 400 400 wanted
-      empty'     = shown { gobanBoard = emptyBoard 9 }
+      empty'     = shown { board = emptyBoard 9 }
   clickAt empty' 400 400 px py === Just (GobanClicked wanted)
 
 prop_aClickOnAStoneDoesNothing :: Property
@@ -172,7 +174,7 @@ prop_aClickOnAStoneDoesNothing = withTests 1 . property $ do
 
 prop_aClickWhenItIsNotYourTurnDoesNothing :: Property
 prop_aClickWhenItIsNotYourTurnDoesNothing = withTests 1 . property $ do
-  let waiting  = shown { gobanHover = Nothing }
+  let waiting  = shown { hover = Nothing }
       (px, py) = middleOf shown 400 400 (Coord 6 6)
   clickAt waiting 400 400 px py === Nothing
 
@@ -197,7 +199,7 @@ prop_aPointWithAStoneWouldNotTakeAnother = withTests 1 . property $ do
   wouldTakeAStone shown (Coord 2 2) === False
   wouldTakeAStone shown (Coord 4 4) === False
   wouldTakeAStone shown (Coord 6 6) === True
-  wouldTakeAStone shown { gobanHover = Nothing } (Coord 6 6) === False
+  wouldTakeAStone shown { hover = Nothing } (Coord 6 6) === False
 
 -- * What the handlers do
 ---------------------------

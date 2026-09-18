@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Talking to a real GNU Go.
@@ -50,10 +52,10 @@ run = findExecutable "gnugo" >>= \found -> case found of
               Left why -> do
                 modifyIORef' failures (+ 1)
                 Text.putStrLn ("GtpTest: " <> name <> ": " <> why)
-        check "a new board" (engineNewGame engine 9)
+        check "a new board" (engine.newGame 9)
         check "a move it is told about"
-              (engineNotify engine Black (Play (Coord 3 3)))
-        check "a move of its own" $ engineGenMove engine White >>= \answer ->
+              (engine.notify Black (Play (Coord 3 3)))
+        check "a move of its own" $ engine.genMove White >>= \answer ->
           pure $ case answer of
             Left  why  -> Left why
             Right Pass -> Left "it passed on an empty board"
@@ -63,8 +65,8 @@ run = findExecutable "gnugo" >>= \found -> case found of
               | otherwise -> case fromVertex 9 =<< toVertex 9 coord of
                 Just same | same == coord -> Right ()
                 _ -> Left "its move is not a point on a 9x9 board"
-        check "taking a move back" (engineUndo engine 1)
-        check "a score" $ engineScore engine >>= \answer -> pure $ case answer of
+        check "taking a move back" (engine.undo 1)
+        check "a score" $ engine.score >>= \answer -> pure $ case answer of
           Left  why    -> Left why
           Right result -> if Text.null result
             then Left "it gave an empty score"
@@ -73,19 +75,19 @@ run = findExecutable "gnugo" >>= \found -> case found of
         -- in it has, each holding a board of its own.
         check "two engines at once" $ GnuGo.withGnuGo program (GnuGo.Level 1)
           $ \opponents -> do
-              first'  <- openOpponent opponents 9
-              second' <- openOpponent opponents 19
+              first'  <- opponents.open 9
+              second' <- opponents.open 19
               case (first', second') of
                 (Right one, Right other) -> do
-                  told <- engineNotify one Black (Play (Coord 0 0))
+                  told <- one.notify Black (Play (Coord 0 0))
                   -- A19 is a point on the second board and not on the
                   -- first, so the two are not the same board.
-                  far  <- engineNotify other Black (Play (Coord 18 18))
-                  closeOpponent opponents one
-                  closeOpponent opponents other
+                  far  <- other.notify Black (Play (Coord 18 18))
+                  opponents.close one
+                  opponents.close other
                   pure (told >> far)
                 _ -> pure (Left "could not start two")
-        engineClose engine
+        engine.close
         count <- readIORef failures
         if count == 0
           then True <$ Text.putStrLn "GtpTest: passed."

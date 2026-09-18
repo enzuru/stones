@@ -148,6 +148,13 @@ its opponent, rather than stored as a line of text. A game keeps only
 the two things that are written nowhere else: the score at the end, and
 the reason the rules would not take the last stone.
 
+The records have no field selectors. `OverloadedRecordDot` and
+`NoFieldSelectors` are on everywhere, so a field is read as
+`session.game.turn` and there is no `sessionGame` function to collide
+with anything. That is why a field can be called `board` in three
+records at once, and why the one place that needs a selector as a value
+writes it as a section, `(.close)`.
+
 ## Playing on a server
 
 Everything the program asks of an opponent is one of the seven actions

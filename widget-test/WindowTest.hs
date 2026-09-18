@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedLabels  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
@@ -34,18 +36,18 @@ import           WidgetUtils
 
 -- | An opponent that does nothing and says so.
 silent :: Engine
-silent = Engine { engineName    = "nobody"
-                , engineNewGame = \_ -> pure (Right ())
-                , engineNotify  = \_ _ -> pure (Right ())
-                , engineGenMove = \_ -> pure (Right Pass)
-                , engineUndo    = \_ -> pure (Right ())
-                , engineScore   = pure (Right "0")
-                , engineClose   = pure ()
+silent = Engine { name    = "nobody"
+                , newGame = \_ -> pure (Right ())
+                , notify  = \_ _ -> pure (Right ())
+                , genMove = \_ -> pure (Right Pass)
+                , undo    = \_ -> pure (Right ())
+                , score   = pure (Right "0")
+                , close   = pure ()
                 }
 
 source :: Opponents
-source = Opponents { openOpponent  = \_ -> pure (Right silent)
-                   , closeOpponent = \_ -> pure ()
+source = Opponents { open  = \_ -> pure (Right silent)
+                   , close = \_ -> pure ()
                    }
 
 -- | Where the window lands after an event.
@@ -157,7 +159,7 @@ prop_aWindowCanBeListenedToAndLetGo = withTests 1 . property $ do
 -- | The game showing in a window, for the tests that compare against
 -- what its own subtitle should say.
 theGame :: State -> Session
-theGame state = case stateGames state of
+theGame state = case state.games of
   ((_, session) : _) -> session
   []                 -> error "no games"
 

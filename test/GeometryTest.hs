@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 -- | Where the board is drawn, and what a click lands on.
@@ -40,18 +42,18 @@ prop_aClickNearAPointStillLandsOnIt = property $ do
       (x, y) = centreOf geo coord
       -- Just inside half a step, which is the half of the board that
       -- belongs to this point.
-      nudge  = geoStep geo * 0.4
+      nudge  = geo.step * 0.4
   pointAt geo (x + nudge) (y - nudge) === Just coord
 
 prop_theBoardIsASquareInTheMiddle :: Property
 prop_theBoardIsASquareInTheMiddle = property $ do
   (n, width, height, _) <- forAll scene
   let geo = geometry n width height
-  assert (geoSide geo <= min width height + 0.001)
-  assert (geoLeft geo >= -0.001)
-  assert (geoTop geo >= -0.001)
-  diff (geoLeft geo * 2 + geoSide geo) (\a b -> abs (a - b) < 0.001) width
-  diff (geoTop geo * 2 + geoSide geo) (\a b -> abs (a - b) < 0.001) height
+  assert (geo.side <= min width height + 0.001)
+  assert (geo.left >= -0.001)
+  assert (geo.top >= -0.001)
+  diff (geo.left * 2 + geo.side) (\a b -> abs (a - b) < 0.001) width
+  diff (geo.top * 2 + geo.side) (\a b -> abs (a - b) < 0.001) height
 
 prop_aClickOffTheBoardLandsNowhere :: Property
 prop_aClickOffTheBoardLandsNowhere = withTests 1 . property $ do

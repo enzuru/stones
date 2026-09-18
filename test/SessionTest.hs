@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
@@ -29,66 +31,66 @@ import           Stones.Session
 -- None of these run. 'step' is a function, and what it hands back is
 -- an action the window would run, which these tests do not.
 silent :: Engine
-silent = Engine { engineName    = "nobody"
-                , engineNewGame = \_ -> pure (Right ())
-                , engineNotify  = \_ _ -> pure (Right ())
-                , engineGenMove = \_ -> pure (Right Pass)
-                , engineUndo    = \_ -> pure (Right ())
-                , engineScore   = pure (Right "0")
-                , engineClose   = pure ()
+silent = Engine { name    = "nobody"
+                , newGame = \_ -> pure (Right ())
+                , notify  = \_ _ -> pure (Right ())
+                , genMove = \_ -> pure (Right Pass)
+                , undo    = \_ -> pure (Right ())
+                , score   = pure (Right "0")
+                , close   = pure ()
                 }
 
 -- | A 9x9 game, played as Black, whose opponent has just started.
 game :: Session
-game = stepSession (opened silent (starting Black 9))
+game = (opened silent (starting Black 9)).session
 
 -- | The same, against an opponent that answers differently.
 gameWith :: Engine -> Session
-gameWith engine = stepSession (opened engine (starting Black 9))
+gameWith engine = (opened engine (starting Black 9)).session
 
 -- | Run what a step asks of the opponent, and answer with what it
 -- said. These are the only tests that run one: the rest are about
 -- where the game lands, which is decided before anything is asked.
 ran :: Step -> PropertyT IO Reply
-ran given = case stepAsk given of
+ran given = case given.ask of
   Nothing  -> annotate "nothing was asked" >> failure
   Just job -> evalIO job
 
 -- | Why a game stopped, if it did.
 brokenBecause :: Session -> Maybe Text
-brokenBecause session = case sessionOpponent session of
+brokenBecause session = case session.opponent of
   Gone why -> Just why
   _        -> Nothing
 
 -- | Where a game lands after an event.
 after :: Session -> SessionEvent -> Session
-after session event = stepSession (step session event)
+after session event = (step session event).session
 
 -- | Whether an event asked the opponent anything.
 asked :: Session -> SessionEvent -> Bool
-asked session event = isJust (stepAsk (step session event))
+asked session event = isJust ((step session event).ask)
 
 prop_aStartedGameIsThePlayersToMove :: Property
 prop_aStartedGameIsThePlayersToMove = withTests 1 . property $ do
   let waiting = starting Black 9
   playable waiting === False
-  boardSize (sessionGame waiting) === 9
+  boardSize waiting.game === 9
   playable game === True
-  sessionNote game === Nothing
+  game.note === Nothing
 
 prop_theOpponentOpensWhenThePlayerHasWhite :: Property
 prop_theOpponentOpensWhenThePlayerHasWhite = withTests 1 . property $ do
   let opening = opened silent (starting White 13)
   -- Black moves first, so a player with White waits, and the opening
   -- move is asked for rather than clicked.
-  playable (stepSession opening) === False
-  assert (isJust (stepAsk opening))
+  playable opening.session === False
+  assert (isJust opening.ask)
 
 prop_aMoveGoesDownAndTheOpponentIsAsked :: Property
 prop_aMoveGoesDownAndTheOpponentIsAsked = withTests 1 . property $ do
   let played = after game (Clicked (Coord 3 3))
-  gameLast (sessionGame played) === Just (Coord 3 3)
-  gameTurn (sessionGame played) === White
+  played.game.last === Just (Coord 3 3)
+  played.game.turn === White
   assert (asked game (Clicked (Coord 3 3)))
   playable played === False
 
@@ -96,15 +98,15 @@ prop_theBoardTakesNoClicksWhileTheOpponentThinks :: Property
 prop_theBoardTakesNoClicksWhileTheOpponentThinks = withTests 1 . property $ do
   let played  = after game (Clicked (Coord 3 3))
       ignored = after played (Clicked (Coord 4 4))
-  gameLast (sessionGame ignored) === Just (Coord 3 3)
-  gameMoves (sessionGame ignored) === gameMoves (sessionGame played)
+  ignored.game.last === Just (Coord 3 3)
+  ignored.game.moves === played.game.moves
   asked played (Clicked (Coord 4 4)) === False
 
 prop_aGameWithNoOpponentYetTakesNoClicks :: Property
 prop_aGameWithNoOpponentYetTakesNoClicks = withTests 1 . property $ do
   let waiting = starting Black 9
       ignored = after waiting (Clicked (Coord 3 3))
-  gameMoves (sessionGame ignored) === []
+  ignored.game.moves === []
   asked waiting (Clicked (Coord 3 3)) === False
 
 prop_anAnswerNobodyAskedForIsDropped :: Property
@@ -112,7 +114,7 @@ prop_anAnswerNobodyAskedForIsDropped = withTests 1 . property $ do
   -- The game is idle, so this belongs to a question that has already
   -- been answered, and playing it would put a stone down out of turn.
   let stray = after game (Answered (Moved (Play (Coord 5 5))))
-  gameMoves (sessionGame stray) === []
+  stray.game.moves === []
 
 prop_aBrokenOpponentStopsTheGame :: Property
 prop_aBrokenOpponentStopsTheGame = withTests 1 . property $ do
@@ -122,14 +124,14 @@ prop_aBrokenOpponentStopsTheGame = withTests 1 . property $ do
   brokenBecause broken === Just "the pipe closed"
   playable broken === False
   canUndo broken === False
-  gameLast (sessionGame later) === Just (Coord 3 3)
+  later.game.last === Just (Coord 3 3)
 
 prop_theOpponentResigningEndsTheGame :: Property
 prop_theOpponentResigningEndsTheGame = withTests 1 . property $ do
   let played   = after game (Clicked (Coord 3 3))
       resigned = after played (Answered (Moved Resign))
-  finished (sessionGame resigned) === True
-  winnerByResignation (sessionGame resigned) === Just Black
+  finished resigned.game === True
+  winnerByResignation resigned.game === Just Black
   playable resigned === False
 
 prop_aMoveTheRulesRefuseStopsTheGame :: Property
@@ -150,21 +152,21 @@ prop_aClickTheRulesRefuseIsSaidSoAndThenForgotten = withTests 1 . property $ do
       moved   = after onTop (Clicked (Coord 5 5))
   -- The point already has a stone on it, so nothing is played and the
   -- game says why.
-  sessionNote onTop === Just (Refused Occupied)
-  gameMoves (sessionGame onTop) === gameMoves (sessionGame back)
+  onTop.note === Just (Refused Occupied)
+  onTop.game.moves === back.game.moves
   -- A move that goes down is not the moment to still be complaining
   -- about the one before it.
-  sessionNote moved === Nothing
+  moved.note === Nothing
 
 prop_undoTakesBackBothMoves :: Property
 prop_undoTakesBackBothMoves = withTests 1 . property $ do
   let played   = after game (Clicked (Coord 3 3))
       answered = after played (Answered (Moved (Play (Coord 4 4))))
       undone   = after answered UndoPressed
-  gameMoves (sessionGame answered) === [Play (Coord 4 4), Play (Coord 3 3)]
+  answered.game.moves === [Play (Coord 4 4), Play (Coord 3 3)]
   canUndo answered === True
-  gameMoves (sessionGame undone) === []
-  gameTurn (sessionGame undone) === Black
+  undone.game.moves === []
+  undone.game.turn === Black
   assert (asked answered UndoPressed)
 
 prop_thereIsNothingToTakeBackAtTheStart :: Property
@@ -177,15 +179,15 @@ prop_twoPassesEndTheGameAndAskForAScore = withTests 1 . property $ do
   let passed = after game Passed
       both   = after passed (Answered (Moved Pass))
       scored = after both (Answered (Scored "B+2.5"))
-  finished (sessionGame both) === True
+  finished both.game === True
   assert (asked passed (Answered (Moved Pass)))
-  sessionNote scored === Just (Result "B+2.5")
+  scored.note === Just (Result "B+2.5")
 
 prop_resigningEndsTheGameWithoutAskingAnything :: Property
 prop_resigningEndsTheGameWithoutAskingAnything = withTests 1 . property $ do
   let resigned = after game ResignPressed
-  finished (sessionGame resigned) === True
-  winnerByResignation (sessionGame resigned) === Just White
+  finished resigned.game === True
+  winnerByResignation resigned.game === Just White
   asked game ResignPressed === False
 
 -- * What the opponent is asked, and what it answers
@@ -201,7 +203,7 @@ prop_aMoveIsToldToTheOpponentAndAnAnswerAsked = withTests 1 . property $ do
 
 prop_anOpponentThatWillNotBeToldIsAFailure :: Property
 prop_anOpponentThatWillNotBeToldIsAFailure = withTests 1 . property $ do
-  let deaf = silent { engineNotify = \_ _ -> pure (Left "it would not listen") }
+  let deaf = silent { notify = \_ _ -> pure (Left "it would not listen") }
   reply <- ran (step (gameWith deaf) (Clicked (Coord 3 3)))
   case reply of
     Failed why -> why === "it would not listen"
@@ -209,7 +211,7 @@ prop_anOpponentThatWillNotBeToldIsAFailure = withTests 1 . property $ do
 
 prop_anOpponentThatWillNotMoveIsAFailure :: Property
 prop_anOpponentThatWillNotMoveIsAFailure = withTests 1 . property $ do
-  let stuck = silent { engineGenMove = \_ -> pure (Left "it would not move") }
+  let stuck = silent { genMove = \_ -> pure (Left "it would not move") }
   reply <- ran (step (gameWith stuck) (Clicked (Coord 3 3)))
   case reply of
     Failed why -> why === "it would not move"
@@ -229,7 +231,7 @@ prop_theSecondPassAsksForTheScore = withTests 1 . property $ do
       both   = after passed (Answered (Moved Pass))
   -- Black passed, White passed, so the game has ended and the next
   -- thing asked is what it came to.
-  finished (sessionGame both) === True
+  finished both.game === True
   reply <- ran (step passed (Answered (Moved Pass)))
   case reply of
     Scored out -> out === "0"
@@ -237,7 +239,7 @@ prop_theSecondPassAsksForTheScore = withTests 1 . property $ do
 
 prop_anOpponentThatWillNotCountIsAFailure :: Property
 prop_anOpponentThatWillNotCountIsAFailure = withTests 1 . property $ do
-  let vague  = silent { engineScore = pure (Left "it would not count") }
+  let vague  = silent { score = pure (Left "it would not count") }
       passed = after (gameWith vague) Passed
   reply <- ran (step passed (Answered (Moved Pass)))
   case reply of
@@ -259,7 +261,7 @@ prop_takingBackToTheOpponentsTurnAsksItToMove :: Property
 prop_takingBackToTheOpponentsTurnAsksItToMove = withTests 1 . property $ do
   -- The player has White, so the opponent opened. There is one move to
   -- take back, and taking it back leaves the opponent to play again.
-  let opening  = stepSession (opened silent (starting White 9))
+  let opening  = (opened silent (starting White 9)).session
       answered = after opening (Answered (Moved (Play (Coord 3 3))))
   canUndo answered === True
   reply <- ran (step answered UndoPressed)
@@ -269,7 +271,7 @@ prop_takingBackToTheOpponentsTurnAsksItToMove = withTests 1 . property $ do
 
 prop_anOpponentThatWillNotGoBackIsAFailure :: Property
 prop_anOpponentThatWillNotGoBackIsAFailure = withTests 1 . property $ do
-  let stubborn = silent { engineUndo = \_ -> pure (Left "it would not go back") }
+  let stubborn = silent { undo = \_ -> pure (Left "it would not go back") }
       played   = after (gameWith stubborn) (Clicked (Coord 3 3))
       answered = after played (Answered (Moved (Play (Coord 4 4))))
   reply <- ran (step answered UndoPressed)
@@ -306,7 +308,7 @@ prop_passingSecondTellsTheOpponentAndAsksForTheScore =
     let played   = after game (Clicked (Coord 3 3))
         theyPass = after played (Answered (Moved Pass))
         over     = after theyPass Passed
-    finished (sessionGame over) === True
+    finished over.game === True
     reply <- ran (step theyPass Passed)
     case reply of
       Scored out -> out === "0"
@@ -315,7 +317,7 @@ prop_passingSecondTellsTheOpponentAndAsksForTheScore =
 prop_anOpponentThatWillNotBeToldOfTheLastPassIsAFailure :: Property
 prop_anOpponentThatWillNotBeToldOfTheLastPassIsAFailure =
   withTests 1 . property $ do
-    let deaf     = silent { engineNotify = \_ _ -> pure (Left "it stopped listening") }
+    let deaf     = silent { notify = \_ _ -> pure (Left "it stopped listening") }
         played   = after (gameWith deaf) (Clicked (Coord 3 3))
         theyPass = after played (Answered (Moved Pass))
     reply <- ran (step theyPass Passed)
@@ -335,12 +337,12 @@ prop_resigningWhenItIsNotYourTurnDoesNothing = withTests 1 . property $ do
   let played   = after game (Clicked (Coord 3 3))
       resigned = after played ResignPressed
   -- The opponent is thinking, so there is nothing to resign from yet.
-  finished (sessionGame resigned) === False
+  finished resigned.game === False
   asked played ResignPressed === False
   -- And a game that has already ended cannot be resigned either.
   let over  = after (after game Passed) (Answered (Moved Pass))
       again = after over ResignPressed
-  gameMoves (sessionGame again) === gameMoves (sessionGame over)
+  again.game.moves === over.game.moves
 
 tests :: Group
 tests = $$(discover)

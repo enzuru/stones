@@ -1,6 +1,9 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+
 -- | Every test the program has.
 --
 -- None of these need a display or a window. The rules, the names, and

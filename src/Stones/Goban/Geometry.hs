@@ -1,6 +1,10 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
+
 -- | Where the lines and the stones of a board go, in the space a
 -- widget has been given.
 --
@@ -24,19 +28,19 @@ import           Go.Types
 
 -- | The board drawn in a given space.
 data Geometry = Geometry
-  { geoSize   :: !Int
+  { size   :: !Int
     -- ^ The width of the board in points.
-  , geoLeft   :: !Double
-  , geoTop    :: !Double
+  , left   :: !Double
+  , top    :: !Double
     -- ^ The top left corner of the wooden square.
-  , geoSide   :: !Double
+  , side   :: !Double
     -- ^ The width of the wooden square.
-  , geoMargin :: !Double
+  , margin :: !Double
     -- ^ The wood between the edge of the square and the outermost
     -- line, which is where the coordinate labels are written.
-  , geoStep   :: !Double
+  , step   :: !Double
     -- ^ The distance between one line and the next.
-  , geoStone  :: !Double
+  , stone  :: !Double
     -- ^ The radius of a stone.
   }
   deriving (Eq, Show)
@@ -46,13 +50,13 @@ data Geometry = Geometry
 -- The board is a square in the middle of the space, because a board
 -- drawn to fill an oblong is a board whose stones are eggs.
 geometry :: Int -> Double -> Double -> Geometry
-geometry n width height = Geometry { geoSize   = n
-                                   , geoLeft   = (width - side) / 2
-                                   , geoTop    = (height - side) / 2
-                                   , geoSide   = side
-                                   , geoMargin = margin
-                                   , geoStep   = step
-                                   , geoStone  = step * 0.47
+geometry n width height = Geometry { size   = n
+                                   , left   = (width - side) / 2
+                                   , top    = (height - side) / 2
+                                   , side   = side
+                                   , margin = margin
+                                   , step   = step
+                                   , stone  = step * 0.47
                                    }
  where
   side = max 1 (min width height)
@@ -67,8 +71,8 @@ geometry n width height = Geometry { geoSize   = n
 -- | Where the middle of a point is.
 centreOf :: Geometry -> Coord -> (Double, Double)
 centreOf geo (Coord x y) =
-  ( geoLeft geo + geoMargin geo + fromIntegral x * geoStep geo
-  , geoTop geo + geoMargin geo + fromIntegral y * geoStep geo
+  ( geo.left + geo.margin + fromIntegral x * geo.step
+  , geo.top + geo.margin + fromIntegral y * geo.step
   )
 
 -- | The point a click at this place landed on, if it landed on one.
@@ -77,14 +81,14 @@ centreOf geo (Coord x y) =
 -- of it, which is the whole board and nothing outside it.
 pointAt :: Geometry -> Double -> Double -> Maybe Coord
 pointAt geo x y
-  | geoStep geo <= 0                  = Nothing
-  | column < 0 || column >= geoSize geo = Nothing
-  | row < 0 || row >= geoSize geo      = Nothing
-  | otherwise                          = Just (Coord column row)
+  | geo.step <= 0                    = Nothing
+  | column < 0 || column >= geo.size = Nothing
+  | row < 0 || row >= geo.size       = Nothing
+  | otherwise                        = Just (Coord column row)
  where
-  column = nearest (x - geoLeft geo - geoMargin geo)
-  row    = nearest (y - geoTop geo - geoMargin geo)
-  nearest distance = round (distance / geoStep geo)
+  column = nearest (x - geo.left - geo.margin)
+  row    = nearest (y - geo.top - geo.margin)
+  nearest distance = round (distance / geo.step)
 
 -- | The marked points of a board of this width.
 --
@@ -109,10 +113,10 @@ starPoints n
 columnLabelAt :: Geometry -> Int -> (Double, Double)
 columnLabelAt geo column =
   let (x, _) = centreOf geo (Coord column 0)
-  in  (x, geoTop geo + geoSide geo - geoMargin geo * 0.5)
+  in  (x, geo.top + geo.side - geo.margin * 0.5)
 
 -- | Where a row label goes: left of that row, in the margin.
 rowLabelAt :: Geometry -> Int -> (Double, Double)
 rowLabelAt geo row =
   let (_, y) = centreOf geo (Coord 0 row)
-  in  (geoLeft geo + geoMargin geo * 0.5, y)
+  in  (geo.left + geo.margin * 0.5, y)

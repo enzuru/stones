@@ -1,6 +1,9 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedLabels    #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -58,14 +61,14 @@ import           Stones.Goban.Geometry
 
 -- | What the board shows.
 data GobanProps = GobanProps
-  { gobanBoard      :: !Board
+  { board      :: !Board
     -- ^ The position to draw.
-  , gobanLast       :: !(Maybe Coord)
+  , last       :: !(Maybe Coord)
     -- ^ The last stone played, which is marked.
-  , gobanHover      :: !(Maybe Color)
+  , hover      :: !(Maybe Color)
     -- ^ The colour to show under the pointer, or 'Nothing' when it is
     -- not this player's turn and the board takes no clicks.
-  , gobanCoordinates :: !Bool
+  , coordinates :: !Bool
     -- ^ Whether to write the column letters and row numbers.
   }
   deriving (Eq, Show)
@@ -82,8 +85,8 @@ newtype GobanEvent = GobanClicked Coord
 -- about. So the handlers are connected once, when the widget is made,
 -- and what changes between subscriptions is the box they send to.
 data GobanState = GobanState
-  { currentProps :: IORef GobanProps
-  , hoverPoint   :: IORef (Maybe Coord)
+  { props :: IORef GobanProps
+  , hover   :: IORef (Maybe Coord)
   , listener     :: IORef (Maybe (GobanEvent -> IO ()))
     -- ^ Where a click goes, when anybody is listening.
   }
@@ -137,16 +140,17 @@ goban customAttributes customParams = Widget CustomWidget { .. }
     Gtk.widgetAddController area motion
     pure
       ( area
-      , GobanState { currentProps = props'
-                   , hoverPoint   = hover
-                   , listener     = sendTo
-                   }
+      , GobanState { props = props', hover = hover, listener = sendTo }
       )
 
-  customPatch old new state
+  -- The state is named in the pattern as well as bound, because a
+  -- field read through a record dot leaves the type of what it was
+  -- read from to be worked out, and this one is an argument of a
+  -- record whose type says nothing about it.
+  customPatch old new state@GobanState { props }
     | old == new = CustomKeep
     | otherwise = CustomModify $ \area -> do
-      writeIORef (currentProps state) new
+      writeIORef props new
       Gtk.widgetQueueDraw area
       pure state
 
@@ -168,7 +172,7 @@ goban customAttributes customParams = Widget CustomWidget { .. }
 
 -- | The width of the board being shown.
 boardWidth :: GobanProps -> Int
-boardWidth = size . gobanBoard
+boardWidth props = props.board.size
 
 -- | The board as it is laid out in a widget this wide and this tall.
 layout :: GobanProps -> Double -> Double -> Geometry
@@ -179,7 +183,7 @@ layout props = geometry (boardWidth props)
 -- by the rules, which are what decides.
 wouldTakeAStone :: GobanProps -> Coord -> Bool
 wouldTakeAStone props coord =
-  gobanHover props /= Nothing && stoneAt (gobanBoard props) coord == Nothing
+  props.hover /= Nothing && stoneAt props.board coord == Nothing
 
 -- | What a click at this place in a widget this size does, which is
 -- nothing at all unless it lands on a point that would take a stone.
@@ -259,60 +263,63 @@ sizeOf area = do
 
 -- | The colours the board is drawn in.
 data Palette = Palette
-  { woodTop    :: (Double, Double, Double)
-  , woodBottom :: (Double, Double, Double)
-  , lineInk    :: (Double, Double, Double)
-  , labelInk   :: (Double, Double, Double)
+  { top    :: (Double, Double, Double)
+  , bottom :: (Double, Double, Double)
+  , line    :: (Double, Double, Double)
+  , label   :: (Double, Double, Double)
   }
 
 -- | The wood is the same wood in both styles, a little darker in the
 -- dark one, so that a lit board does not glare out of a dark window.
 palette :: Bool -> Palette
 palette dark
-  | dark = Palette { woodTop    = (0.71, 0.54, 0.32)
-                   , woodBottom = (0.60, 0.44, 0.25)
-                   , lineInk    = (0.13, 0.10, 0.06)
-                   , labelInk   = (0.25, 0.19, 0.12)
+  | dark = Palette { top    = (0.71, 0.54, 0.32)
+                   , bottom = (0.60, 0.44, 0.25)
+                   , line    = (0.13, 0.10, 0.06)
+                   , label   = (0.25, 0.19, 0.12)
                    }
-  | otherwise = Palette { woodTop    = (0.90, 0.74, 0.49)
-                        , woodBottom = (0.83, 0.65, 0.39)
-                        , lineInk    = (0.20, 0.15, 0.09)
-                        , labelInk   = (0.33, 0.25, 0.15)
+  | otherwise = Palette { top    = (0.90, 0.74, 0.49)
+                        , bottom = (0.83, 0.65, 0.39)
+                        , line    = (0.20, 0.15, 0.09)
+                        , label   = (0.33, 0.25, 0.15)
                         }
 
 -- | Draw the whole board into a space this wide and this tall.
 draw
   :: GobanProps -> Bool -> Maybe Coord -> Double -> Double -> Cairo.Render ()
-draw props@GobanProps { gobanBoard, gobanLast, gobanCoordinates } dark hovered width height
+draw props@GobanProps { board, last = played, coordinates } dark hovered width height
   = do
-    let n   = size gobanBoard
+    let n   = board.size
         geo = geometry n width height
         ink = palette dark
     drawWood ink geo
     drawGrid ink geo
     drawStars ink geo
-    when gobanCoordinates (drawLabels ink geo)
-    mapM_ (drawStoneAt geo) [ (c, s) | c <- coords gobanBoard
-                            , Just s <- [stoneAt gobanBoard c] ]
-    mapM_ (drawLastMark geo gobanBoard) gobanLast
+    when coordinates (drawLabels ink geo)
+    mapM_ (drawStoneAt geo)
+          [ (point, stone)
+          | point        <- coords board
+          , Just stone   <- [stoneAt board point]
+          ]
+    mapM_ (drawLastMark geo board) played
     drawHover props geo hovered
 
 -- | The wooden square, with a rounded edge and a line around it.
 drawWood :: Palette -> Geometry -> Cairo.Render ()
-drawWood Palette { woodTop, woodBottom } geo = do
-  let radius = geoSide geo * 0.012
-  roundedRectangle (geoLeft geo) (geoTop geo) (geoSide geo) (geoSide geo) radius
-  Cairo.withLinearPattern (geoLeft geo)
-                          (geoTop geo)
-                          (geoLeft geo)
-                          (geoTop geo + geoSide geo)
+drawWood Palette { top, bottom } geo = do
+  let radius = geo.side * 0.012
+  roundedRectangle geo.left geo.top geo.side geo.side radius
+  Cairo.withLinearPattern geo.left
+                          geo.top
+                          geo.left
+                          (geo.top + geo.side)
     $ \pattern' -> do
-        addStop pattern' 0 woodTop
-        addStop pattern' 1 woodBottom
+        addStop pattern' 0 top
+        addStop pattern' 1 bottom
         Cairo.setSource pattern'
         Cairo.fillPreserve
   Cairo.setSourceRGBA 0 0 0 0.22
-  Cairo.setLineWidth (max 1 (geoSide geo * 0.002))
+  Cairo.setLineWidth (max 1 (geo.side * 0.002))
   Cairo.stroke
  where
   addStop pattern' at (r, g, b) = Cairo.patternAddColorStopRGB pattern' at r g b
@@ -320,14 +327,14 @@ drawWood Palette { woodTop, woodBottom } geo = do
 -- | The lines of the grid. The four at the edge are drawn thicker,
 -- which is how a board is painted.
 drawGrid :: Palette -> Geometry -> Cairo.Render ()
-drawGrid Palette { lineInk = (r, g, b) } geo = do
+drawGrid Palette { line = (r, g, b) } geo = do
   Cairo.setSourceRGB r g b
   Cairo.setLineCap Cairo.LineCapSquare
   mapM_ column [0 .. n - 1]
   mapM_ row    [0 .. n - 1]
  where
-  n    = geoSize geo
-  thin = max 0.7 (geoStep geo * 0.035)
+  n    = geo.size
+  thin = max 0.7 (geo.step * 0.035)
 
   column i = segment (widthOf i) (centreOf geo (Coord i 0))
                                  (centreOf geo (Coord i (n - 1)))
@@ -347,30 +354,30 @@ drawGrid Palette { lineInk = (r, g, b) } geo = do
 
 -- | The marked points.
 drawStars :: Palette -> Geometry -> Cairo.Render ()
-drawStars Palette { lineInk = (r, g, b) } geo = do
+drawStars Palette { line = (r, g, b) } geo = do
   Cairo.setSourceRGB r g b
-  mapM_ dot (starPoints (geoSize geo))
+  mapM_ dot (starPoints geo.size)
  where
   dot coord = do
     let (x, y) = centreOf geo coord
-    Cairo.arc x y (max 1.2 (geoStep geo * 0.09)) 0 (2 * pi)
+    Cairo.arc x y (max 1.2 (geo.step * 0.09)) 0 (2 * pi)
     Cairo.fill
 
 -- | The column letters along the bottom and the row numbers down the
 -- left, which is where a player reading a game record looks.
 drawLabels :: Palette -> Geometry -> Cairo.Render ()
-drawLabels Palette { labelInk = (r, g, b) } geo = do
+drawLabels Palette { label = (r, g, b) } geo = do
   Cairo.setSourceRGB r g b
   Cairo.selectFontFace ("Cantarell" :: Text)
                        Cairo.FontSlantNormal
                        Cairo.FontWeightNormal
-  Cairo.setFontSize (geoMargin geo * 0.72)
+  Cairo.setFontSize (geo.margin * 0.72)
   -- Over the letters themselves rather than over the numbers of the
   -- columns, so that there is no counting to get wrong.
   mapM_ column (zip [0 ..] (columnLetters n))
   mapM_ row    [0 .. n - 1]
  where
-  n = geoSize geo
+  n = geo.size
   column (i, letter) = centred (columnLabelAt geo i) (Text.singleton letter)
   row i = centred (rowLabelAt geo i) (Text.pack (show (n - i)))
 
@@ -389,7 +396,7 @@ drawLabels Palette { labelInk = (r, g, b) } geo = do
 drawStoneAt :: Geometry -> (Coord, Color) -> Cairo.Render ()
 drawStoneAt geo (coord, color) = do
   let (x, y) = centreOf geo coord
-      radius = geoStone geo
+      radius = geo.stone
   Cairo.setSourceRGBA 0 0 0 0.28
   Cairo.arc (x + radius * 0.07) (y + radius * 0.09) radius 0 (2 * pi)
   Cairo.fill
@@ -426,7 +433,7 @@ drawLastMark geo board coord = case stoneAt board coord of
   Nothing    -> pure ()
   Just color -> do
     let (x, y) = centreOf geo coord
-        radius = geoStone geo
+        radius = geo.stone
     case color of
       Black -> Cairo.setSourceRGBA 1 1 1 0.85
       White -> Cairo.setSourceRGBA 0 0 0 0.7
@@ -438,10 +445,10 @@ drawLastMark geo board coord = case stoneAt board coord of
 -- put one. It is not drawn when the board is not taking moves, or when
 -- the point already has a stone on it.
 drawHover :: GobanProps -> Geometry -> Maybe Coord -> Cairo.Render ()
-drawHover props geo hovered = case (gobanHover props, hovered) of
+drawHover props geo hovered = case (props.hover, hovered) of
   (Just color, Just coord) | wouldTakeAStone props coord -> do
     let (x, y)       = centreOf geo coord
-        radius       = geoStone geo
+        radius       = geo.stone
         (_, (r, g, b)) = stoneShades color
     Cairo.setSourceRGBA r g b 0.45
     Cairo.arc x y radius 0 (2 * pi)

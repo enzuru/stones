@@ -1,6 +1,9 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -44,13 +47,13 @@ import           System.Process
 
 -- | A Go program that is running and listening for commands.
 data Gtp = Gtp
-  { gtpIn      :: Handle
-  , gtpOut     :: Handle
-  , gtpProcess :: ProcessHandle
-  , gtpLock    :: MVar ()
-  , gtpCounter :: IORef Int
-  , gtpStopped :: IORef Bool
-  , gtpName    :: Text
+  { input      :: Handle
+  , output     :: Handle
+  , process :: ProcessHandle
+  , lock    :: MVar ()
+  , counter :: IORef Int
+  , stopped :: IORef Bool
+  , name    :: Text
   }
 
 -- | What can go wrong with a command.
@@ -88,13 +91,13 @@ start program arguments = do
   lock    <- newMVar ()
   counter <- newIORef 0
   stopped <- newIORef False
-  pure Gtp { gtpIn      = input
-           , gtpOut     = output
-           , gtpProcess = handle'
-           , gtpLock    = lock
-           , gtpCounter = counter
-           , gtpStopped = stopped
-           , gtpName    = Text.pack program
+  pure Gtp { input   = input
+           , output  = output
+           , process = handle'
+           , lock    = lock
+           , counter = counter
+           , stopped = stopped
+           , name    = Text.pack program
            }
 
 -- | Ask the program to quit, and wait for it. A program that will not
@@ -106,27 +109,27 @@ start program arguments = do
 -- second call has to be the one that does nothing.
 stop :: Gtp -> IO ()
 stop gtp = do
-  first <- atomicModifyIORef' (gtpStopped gtp) (\done -> (True, not done))
+  first <- atomicModifyIORef' gtp.stopped (\done -> (True, not done))
   when first $ do
     _ <- (try (command gtp "quit") :: IO
            (Either SomeException (Either GtpError Text)))
-    _ <- (try (hClose (gtpIn gtp)) :: IO (Either IOException ()))
-    terminateProcess (gtpProcess gtp)
-    _ <- waitForProcess (gtpProcess gtp)
+    _ <- (try (hClose gtp.input) :: IO (Either IOException ()))
+    terminateProcess gtp.process
+    _ <- waitForProcess gtp.process
     pure ()
 
 -- | Is the program still running?
 alive :: Gtp -> IO Bool
-alive gtp = (== Nothing) <$> getProcessExitCode (gtpProcess gtp)
+alive gtp = (== Nothing) <$> getProcessExitCode gtp.process
 
 -- | Send a command and read the answer, with the leading @=@ and the
 -- identifier taken off and the surrounding blank lines dropped.
 command :: Gtp -> Text -> IO (Either GtpError Text)
-command gtp input = withMVar (gtpLock gtp) $ \() -> do
+command gtp input = withMVar gtp.lock $ \() -> do
   identifier <- nextIdentifier gtp
   sent       <- try $ do
-    Text.hPutStrLn (gtpIn gtp) (Text.pack (show identifier) <> " " <> input)
-    hFlush (gtpIn gtp)
+    Text.hPutStrLn gtp.input (Text.pack (show identifier) <> " " <> input)
+    hFlush gtp.input
   case sent of
     Left  failure -> pure (Left (Broken (Text.pack (show (failure :: IOException)))))
     Right ()      -> readResponse gtp
@@ -140,7 +143,7 @@ command_ gtp input = fmap (() <$) (command gtp input)
 -- echoes it back, which is what makes it possible to tell an answer
 -- from a line the program printed on its own.
 nextIdentifier :: Gtp -> IO Int
-nextIdentifier gtp = atomicModifyIORef' (gtpCounter gtp) (\n -> (n + 1, n + 1))
+nextIdentifier gtp = atomicModifyIORef' gtp.counter (\n -> (n + 1, n + 1))
 
 -- | Read lines until the blank one that ends an answer.
 readResponse :: Gtp -> IO (Either GtpError Text)
@@ -159,11 +162,11 @@ readResponse gtp = do
   -- An answer runs to the first blank line. Lines before the status
   -- line are whatever the program printed on its own, and are dropped.
   readLines seen = do
-    ended <- hIsEOF (gtpOut gtp)
+    ended <- hIsEOF gtp.output
     if ended
       then pure (reverse seen)
       else do
-        line <- Text.hGetLine (gtpOut gtp)
+        line <- Text.hGetLine gtp.output
         let trimmed = Text.stripEnd line
         if Text.null trimmed
           then pure (reverse seen)

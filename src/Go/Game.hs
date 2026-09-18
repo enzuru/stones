@@ -1,6 +1,9 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
 {-# LANGUAGE LambdaCase #-}
 
 -- | A game in progress: the board, whose turn it is, what has been
@@ -28,23 +31,23 @@ import           Go.Types
 -- because taking a move back has to put the captured stones back too,
 -- and the position before the move is the shortest way to say that.
 data Game = Game
-  { gameBoard    :: !Board
+  { board    :: !Board
     -- ^ The position now.
-  , gameTurn     :: !Color
+  , turn     :: !Color
     -- ^ Who plays next.
-  , gameCaptures :: !Captures
+  , captures :: !Captures
     -- ^ How many stones each player has taken.
-  , gameKoPoint  :: !(Maybe Coord)
+  , koPoint  :: !(Maybe Coord)
     -- ^ The point that is closed for one move, if a ko was just taken.
-  , gameLast     :: !(Maybe Coord)
+  , last     :: !(Maybe Coord)
     -- ^ Where the last stone went, which the board marks.
-  , gameMoves    :: ![Move]
+  , moves    :: ![Move]
     -- ^ Every move so far, the newest first.
-  , gamePasses   :: !Int
+  , passes   :: !Int
     -- ^ How many passes in a row have just been made.
-  , gameResigned :: !(Maybe Color)
+  , resigned :: !(Maybe Color)
     -- ^ Who resigned, if anybody did.
-  , gameHistory  :: ![Game]
+  , history  :: ![Game]
     -- ^ The game before each move, the newest first.
   }
 
@@ -54,73 +57,73 @@ data Game = Game
 -- play the same from here whatever was played to get there.
 instance Eq Game where
   one == other =
-    gameBoard one
-      ==     gameBoard other
-      &&     gameTurn one
-      ==     gameTurn other
-      &&     gameCaptures one
-      ==     gameCaptures other
-      &&     gameKoPoint one
-      ==     gameKoPoint other
-      &&     gameLast one
-      ==     gameLast other
-      &&     gamePasses one
-      ==     gamePasses other
-      &&     gameResigned one
-      ==     gameResigned other
+    one.board
+      ==     other.board
+      &&     one.turn
+      ==     other.turn
+      &&     one.captures
+      ==     other.captures
+      &&     one.koPoint
+      ==     other.koPoint
+      &&     one.last
+      ==     other.last
+      &&     one.passes
+      ==     other.passes
+      &&     one.resigned
+      ==     other.resigned
 
 -- | The position and what is left to decide about it, without the
 -- history, for the same reason.
 instance Show Game where
   show game =
     "Game { board = "
-      <> show (gameBoard game)
+      <> show game.board
       <> ", turn = "
-      <> show (gameTurn game)
+      <> show game.turn
       <> ", captures = "
-      <> show (gameCaptures game)
+      <> show game.captures
       <> ", ko = "
-      <> show (gameKoPoint game)
+      <> show game.koPoint
       <> ", passes = "
-      <> show (gamePasses game)
+      <> show game.passes
       <> ", resigned = "
-      <> show (gameResigned game)
+      <> show game.resigned
       <> " }"
 
 -- | A game on an empty board of this width, with Black to play.
 newGame :: Int -> Game
-newGame n = Game { gameBoard    = emptyBoard n
-                 , gameTurn     = Black
-                 , gameCaptures = noCaptures
-                 , gameKoPoint  = Nothing
-                 , gameLast     = Nothing
-                 , gameMoves    = []
-                 , gamePasses   = 0
-                 , gameResigned = Nothing
-                 , gameHistory  = []
+newGame n = Game { board    = emptyBoard n
+                 , turn     = Black
+                 , captures = noCaptures
+                 , koPoint  = Nothing
+                 , last     = Nothing
+                 , moves    = []
+                 , passes   = 0
+                 , resigned = Nothing
+                 , history  = []
                  }
 
 -- | The width of the board this game is played on.
 boardSize :: Game -> Int
-boardSize = size . gameBoard
+boardSize game = game.board.size
 
 -- | Is the game over? Two passes in a row end it, and so does a
 -- resignation.
 finished :: Game -> Bool
-finished game = gamePasses game >= 2 || gameResigned game /= Nothing
+finished game = game.passes >= 2 || game.resigned /= Nothing
 
 -- | Who won, if the game ended in a resignation.
 winnerByResignation :: Game -> Maybe Color
-winnerByResignation = fmap opposite . gameResigned
+winnerByResignation game = opposite <$> game.resigned
 
 -- | Can this player put a stone on this point? The answer is the same
 -- one 'playMove' gives, without the new game.
 legal :: Color -> Coord -> Game -> Either Illegal ()
 legal color coord game
-  | finished game                  = Left GameOver
-  | color /= gameTurn game         = Left WrongPlayer
-  | gameKoPoint game == Just coord = Left KoRepeat
-  | otherwise                      = () <$ place color coord (gameBoard game)
+  | finished game              = Left GameOver
+  | color /= game.turn         = Left WrongPlayer
+  | game.koPoint == Just coord = Left KoRepeat
+  | otherwise                  = () <$ place color coord game.board
 
 -- | Play a move for the player whose turn it is.
 --
@@ -129,34 +132,34 @@ legal color coord game
 -- rather than as a board that quietly disagrees with the engine.
 playMove :: Color -> Move -> Game -> Either Illegal Game
 playMove color move game
-  | finished game          = Left GameOver
-  | color /= gameTurn game = Left WrongPlayer
-  | otherwise              = case move of
-  Pass   -> Right (record game) { gameTurn     = opposite color
-                                , gameKoPoint  = Nothing
-                                , gameLast     = Nothing
-                                , gameMoves    = Pass : gameMoves game
-                                , gamePasses   = gamePasses game + 1
+  | finished game      = Left GameOver
+  | color /= game.turn = Left WrongPlayer
+  | otherwise          = case move of
+  Pass   -> Right (record game) { turn     = opposite color
+                                , koPoint  = Nothing
+                                , last     = Nothing
+                                , moves    = Pass : game.moves
+                                , passes   = game.passes + 1
                                 }
-  Resign -> Right (record game) { gameTurn     = opposite color
-                                , gameKoPoint  = Nothing
-                                , gameMoves    = Resign : gameMoves game
-                                , gameResigned = Just color
+  Resign -> Right (record game) { turn     = opposite color
+                                , koPoint  = Nothing
+                                , moves    = Resign : game.moves
+                                , resigned = Just color
                                 }
   Play coord -> do
     () <- legal color coord game
-    Placement board captured <- place color coord (gameBoard game)
+    Placement board captured <- place color coord game.board
     Right (record game)
-      { gameBoard    = board
-      , gameTurn     = opposite color
-      , gameCaptures = addCapture color (Set.size captured) (gameCaptures game)
-      , gameKoPoint  = koPoint board coord captured
-      , gameLast     = Just coord
-      , gameMoves    = Play coord : gameMoves game
-      , gamePasses   = 0
+      { board    = board
+      , turn     = opposite color
+      , captures = addCapture color (Set.size captured) game.captures
+      , koPoint  = koAfter board coord captured
+      , last     = Just coord
+      , moves    = Play coord : game.moves
+      , passes   = 0
       }
  where
-  record before = before { gameHistory = before : gameHistory before }
+  record before = before { history = before : before.history }
 
 -- | The point a ko closes for one move.
 --
@@ -166,8 +169,8 @@ playMove color move game
 -- stone that took it is alone with one liberty. Anything else, a
 -- capture of two or a capture by a group, cannot be taken back into
 -- the same position, so nothing is closed.
-koPoint :: Board -> Coord -> Set.Set Coord -> Maybe Coord
-koPoint board coord captured = case Set.toList captured of
+koAfter :: Board -> Coord -> Set.Set Coord -> Maybe Coord
+koAfter board coord captured = case Set.toList captured of
   [taken] | Set.size placed == 1 && Set.size (liberties board placed) == 1 ->
     Just taken
   _ -> Nothing
@@ -175,6 +178,6 @@ koPoint board coord captured = case Set.toList captured of
 
 -- | Take the last move back, if there is one.
 undoMove :: Game -> Maybe Game
-undoMove game = case gameHistory game of
+undoMove game = case game.history of
   before : _ -> Just before
   []         -> Nothing

@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -48,18 +50,18 @@ import           Stones.Session
 -- | An opponent that passes whatever it is asked, so that the board
 -- comes back to the player after every move.
 passer :: Engine
-passer = Engine { engineName    = "passer"
-                , engineNewGame = \_ -> pure (Right ())
-                , engineNotify  = \_ _ -> pure (Right ())
-                , engineGenMove = \_ -> pure (Right Pass)
-                , engineUndo    = \_ -> pure (Right ())
-                , engineScore   = pure (Right "0")
-                , engineClose   = pure ()
+passer = Engine { name    = "passer"
+                , newGame = \_ -> pure (Right ())
+                , notify  = \_ _ -> pure (Right ())
+                , genMove = \_ -> pure (Right Pass)
+                , undo    = \_ -> pure (Right ())
+                , score   = pure (Right "0")
+                , close   = pure ()
                 }
 
 source :: Opponents
-source = Opponents { openOpponent  = \_ -> pure (Right passer)
-                   , closeOpponent = \_ -> pure ()
+source = Opponents { open  = \_ -> pure (Right passer)
+                   , close = \_ -> pure ()
                    }
 
 -- | The player's stones on the board of the first tab, by name.
@@ -68,12 +70,12 @@ source = Opponents { openOpponent  = \_ -> pure (Right passer)
 -- passes and a pass is not a point: the last move would go back to
 -- nothing as soon as it answered.
 stones :: State -> Text
-stones state = case stateGames state of
+stones state = case state.games of
   ((_, session) : _)
     | null named -> "-"
     | otherwise  -> Text.unwords named
    where
-    board = gameBoard (sessionGame session)
+    board = session.game.board
     named = mapMaybe
       (toVertex (sessionSize session))
       [ point | point <- coords board, stoneAt board point == Just Black ]

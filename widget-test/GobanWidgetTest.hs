@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedLabels  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
@@ -30,18 +32,18 @@ import           WidgetUtils
 
 -- | An empty 9x9 board with the player to move.
 empty' :: GobanProps
-empty' = GobanProps { gobanBoard       = emptyBoard 9
-                    , gobanLast        = Nothing
-                    , gobanHover       = Just Black
-                    , gobanCoordinates = True
+empty' = GobanProps { board       = emptyBoard 9
+                    , last        = Nothing
+                    , hover       = Just Black
+                    , coordinates = True
                     }
 
 -- | The same board with a stone on it.
 played :: GobanProps
-played = empty' { gobanBoard = stoned, gobanLast = Just (Coord 3 3) }
+played = empty' { board = stoned, last = Just (Coord 3 3) }
  where
   stoned = case place Black (Coord 3 3) (emptyBoard 9) of
-    Right placement -> placedBoard placement
+    Right placement -> placement.after
     Left  _         -> emptyBoard 9
 
 board :: GobanProps -> Widget GobanEvent
@@ -125,7 +127,7 @@ prop_aBoardCanBeBuiltForEverySize :: Property
 prop_aBoardCanBeBuiltForEverySize = withTests 1 . property $ do
   areas <- evalIO . runUI $ traverse
     (\n -> do
-      made <- create (board empty' { gobanBoard = emptyBoard n })
+      made <- create (board empty' { board = emptyBoard n })
       Gtk.castTo Gtk.DrawingArea =<< widgetOf made
     )
     [9, 13, 19]

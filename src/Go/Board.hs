@@ -1,14 +1,20 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
+
 -- | The board and the rules that act on one stone at a time.
 --
 -- This module knows nothing about whose turn it is, about passing, or
 -- about ko, which all need more than one position to decide. Those
 -- live in "Go.Game".
 module Go.Board
-  ( Board
-  , size
+  -- The board's width is public and the vector behind it is not, so
+  -- that nothing outside this module can build one that disagrees with
+  -- itself.
+  ( Board(size)
   , emptyBoard
   , stoneAt
   , inBounds
@@ -44,25 +50,25 @@ emptyBoard n = Board n (Vector.replicate (n * n) Nothing)
 
 -- | The index into 'points' of a point that is on the board.
 index :: Board -> Coord -> Int
-index board (Coord x y) = y * size board + x
+index board (Coord x y) = y * board.size + x
 
 -- | Is this point on the board?
 inBounds :: Board -> Coord -> Bool
 inBounds board (Coord x y) =
-  x >= 0 && y >= 0 && x < size board && y < size board
+  x >= 0 && y >= 0 && x < board.size && y < board.size
 
 -- | The stone on this point, if there is one. A point off the board
 -- is empty, which is what makes the liberty count below stop at the
 -- edge.
 stoneAt :: Board -> Coord -> Maybe Color
 stoneAt board coord
-  | inBounds board coord = points board Vector.! index board coord
+  | inBounds board coord = board.points Vector.! index board coord
   | otherwise            = Nothing
 
 -- | Every point of the board, row by row from the top left.
 coords :: Board -> [Coord]
 coords board =
-  [ Coord x y | y <- [0 .. size board - 1], x <- [0 .. size board - 1] ]
+  [ Coord x y | y <- [0 .. board.size - 1], x <- [0 .. board.size - 1] ]
 
 -- | The points beside this one, left out where the board ends.
 neighbours :: Board -> Coord -> [Coord]
@@ -104,9 +110,9 @@ hasLiberty board stones = not (Set.null (liberties board stones))
 
 -- | A move that was played, and what it did.
 data Placement = Placement
-  { placedBoard    :: !Board
+  { after    :: !Board
     -- ^ The board after the stone went down and the dead came off.
-  , placedCaptured :: !(Set Coord)
+  , captured :: !(Set Coord)
     -- ^ The points the captured stones came off.
   }
   deriving (Eq, Show)
@@ -151,10 +157,10 @@ set value coord = setAll [(coord, value)]
 setAll :: [(Coord, Maybe Color)] -> Board -> Board
 setAll [] board = board
 setAll written board = board
-  { points = points board Vector.// [ (index board at, what) | (at, what) <- written ]
+  { points = board.points Vector.// [ (index board at, what) | (at, what) <- written ]
   }
 
 -- | How many stones of this colour are on the board.
 stoneCount :: Color -> Board -> Int
 stoneCount color board =
-  length (filter (== Just color) (Vector.toList (points board)))
+  length (filter (== Just color) (Vector.toList board.points))

@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
@@ -46,8 +48,8 @@ prop_takingNothingChangesNothing = property $ do
 prop_theTwoSidesAreCountedApart :: Property
 prop_theTwoSidesAreCountedApart = withTests 1 . property $ do
   let both = addCapture White 2 (addCapture Black 7 noCaptures)
-  blackCaptured both === 7
-  whiteCaptured both === 2
+  both.black === 7
+  both.white === 2
 
 prop_everyRefusalHasSomethingToSay :: Property
 prop_everyRefusalHasSomethingToSay = property $ do
