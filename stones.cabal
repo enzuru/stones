@@ -1,4 +1,10 @@
 cabal-version:        2.4
+
+-- cabal-version has to be the first line of the file, so the notice
+-- that is at the top of every other file here is under it.
+-- SPDX-FileCopyrightText: 2026 Elias Khanzada
+-- SPDX-License-Identifier: GPL-3.0-or-later
+
 name:                 stones
 version:              0.1.0
 synopsis:             Play Go against GNU Go, in a libadwaita window.
@@ -6,12 +12,16 @@ description:          Stones is a Go board. It keeps the rules itself
                       and plays them against GNU Go over the Go Text
                       Protocol, and it draws the board with cairo in a
                       libadwaita window built with gi-gtk4-declarative.
-license:              MPL-2.0
+license:              GPL-3.0-or-later
+license-file:         LICENSE
+copyright:            2026 Elias Khanzada
 author:               Elias Khanzada
 maintainer:           lenzuru@gmail.com
 category:             Game
 build-type:           Simple
 tested-with:          GHC == 9.10.3
+extra-source-files:   README.md
+                      LICENSE
 
 common warnings
   ghc-options:        -Wall -Wcompat -Wincomplete-record-updates

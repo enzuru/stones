@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: 2026 Elias Khanzada
+-- SPDX-License-Identifier: GPL-3.0-or-later
+
 -- | The board and the rules that act on one stone at a time.
 --
 -- This module knows nothing about whose turn it is, about passing, or

@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: 2026 Elias Khanzada
+-- SPDX-License-Identifier: GPL-3.0-or-later
+
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | The names the Go Text Protocol gives to points on the board.

@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Elias Khanzada
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
 # Stones
 
 A Go board in a libadwaita window, written in Haskell. It plays against
@@ -142,5 +147,12 @@ written yet.
 
 ## License
 
-Mozilla Public License 2.0. The declarative GTK layer is Oskar
-Wickström's, under the same license.
+GNU General Public License, version 3 or later. The full text is in
+[LICENSE](LICENSE), and every source file says so at the top.
+
+The declarative GTK 4 layer this is built on is a separate program, in
+a checkout of its own, under the Mozilla Public License 2.0. That
+license is written to allow this: a work combining MPL-2.0 code with
+GPL code may be distributed under the GPL, unless the MPL files carry
+the notice saying otherwise, and these do not. Those files stay under
+the MPL for their own terms, and their notices stay with them.
