@@ -43,7 +43,15 @@ GHC_RTS := +RTS -M4g -A64m -RTS
 
 SOURCES := $(shell find $(SRC) -name '*.hs')
 
-.PHONY: all build stones check run clean
+COVERAGE := $(BUILD)/coverage
+
+# The modules to measure, which are this program's own. Everything else
+# the test binary is built from is the declarative GTK layer, whose
+# coverage is its own repository's business.
+MEASURED := $(shell find $(SRC) -name '*.hs' \
+  | sed -e 's|^$(SRC)/||' -e 's|/|.|g' -e 's|\.hs$$||' -e 's|^|--include=|')
+
+.PHONY: all build stones check coverage run clean
 
 # One compiler at a time. Each call below loads the whole gi-gtk
 # interface, so `make -j` multiplies the memory rather than dividing the
@@ -76,6 +84,32 @@ $(BUILD)/tests: $(SOURCES) $(wildcard $(TEST)/*.hs)
 	@mkdir -p $(BUILD)
 	ghc $(INCLUDES) -i$(TEST) $(WARNINGS) $(PACKAGES) -threaded \
 	  -outputdir $(BUILD)/test-objects -o $@ $(TEST)/Main.hs $(GHC_RTS)
+
+# What the tests reach, by GHC's own counting.
+#
+# This builds the test program a second time, with -fhpc, because a
+# program compiled for coverage is a different program. It is not part
+# of `make check` for that reason.
+coverage:
+	@mkdir -p $(COVERAGE)
+	# A .tix file from an earlier run belongs to that run's program, and
+	# hpc says so rather than adding the two up.
+	@rm -f $(COVERAGE)/*.tix
+	ghc -fhpc -hpcdir $(COVERAGE)/mix $(INCLUDES) -i$(TEST) \
+	  $(WARNINGS) $(PACKAGES) -threaded \
+	  -outputdir $(COVERAGE)/objects -o $(COVERAGE)/tests \
+	  $(TEST)/Main.hs $(GHC_RTS)
+	cd $(COVERAGE) && ./tests > run.log 2>&1
+	@echo
+	@echo "== Stones, all told"
+	@hpc report $(COVERAGE)/tests.tix --hpcdir=$(COVERAGE)/mix \
+	  --srcdir=. $(MEASURED)
+	@echo
+	@echo "== Per module, least covered first"
+	@hpc report $(COVERAGE)/tests.tix --hpcdir=$(COVERAGE)/mix \
+	  --srcdir=. --per-module $(MEASURED) \
+	  | grep -B1 'expressions used' | grep -v '^--$$' | paste - - \
+	  | sed 's/-----//g' | sort -t'>' -k2 -n
 
 run: $(BUILD)/stones
 	$(BUILD)/stones
