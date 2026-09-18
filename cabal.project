@@ -1,0 +1,8 @@
+-- The declarative GTK 4 layer is not on Hackage. It lives beside this
+-- checkout, so the three packages of it are named here as source
+-- packages rather than as dependencies to be downloaded.
+packages:
+  .
+  ../gi-gtk-declarative/gi-gtk4-declarative
+  ../gi-gtk-declarative/gi-gtk4-declarative-app-simple
+  ../gi-gtk-declarative/gi-gtk4-declarative-adwaita
