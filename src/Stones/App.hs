@@ -32,7 +32,6 @@ import qualified Data.Vector                   as Vector
 
 import qualified GI.Adw                        as Adw
 import qualified GI.Gtk                        as Gtk
-import qualified GI.Pango                      as Pango
 import           GI.Gtk.Declarative
 import           GI.Gtk.Declarative.Adwaita.Bin ( )
 import           GI.Gtk.Declarative.Adwaita.HeaderBar
@@ -45,8 +44,7 @@ import           GI.Gtk.Declarative.Adwaita.Slots
                                                 ( titleWidget )
 import           GI.Gtk.Declarative.Adwaita.TabView
 import           GI.Gtk.Declarative.Adwaita.ToolbarView
-                                                ( toolbarBottom
-                                                , toolbarContent
+                                                ( toolbarContent
                                                 , toolbarTop
                                                 )
 import           GI.Gtk.Declarative.App.Simple
@@ -249,13 +247,23 @@ showing state = do
 viewName :: Text
 viewName = "stones-games"
 
+-- | The window is a header bar over a board, and nothing else.
+--
+-- What the player can do is in the bar rather than under the board:
+-- the two moves that are made often are buttons at the start and the
+-- end of it, everything else is in the menu, and what the game stands
+-- at is the window's title and subtitle. That is the shape the GNOME
+-- games have, and it leaves the whole of the window below the bar to
+-- the board.
 view' :: State -> AppView Adw.ApplicationWindow Event
 view' state =
   bin
       Adw.ApplicationWindow
       [ #title := "Stones"
       , #defaultWidth := 760
-      , #defaultHeight := 860
+      , #defaultHeight := 800
+      , #widthRequest := 360
+      , #heightRequest := 360
       , on #closeRequest (True, Closed)
       ]
     $ container
@@ -264,44 +272,125 @@ view' state =
         [ toolbarTop (header state)
         , toolbarTop (widget Adw.TabBar [tabBarView viewName])
         , toolbarContent (games state)
-        , toolbarBottom (footer state)
         ]
 
--- | The bar at the top: a menu that opens a game, the title, and what
--- the game showing is played against.
+-- | The bar at the top: what the player does on the left and the
+-- right, and where the game stands in the middle.
+--
+-- The title says whose turn it is and the subtitle carries the
+-- numbers, which is why it is marked @numeric@: that style class asks
+-- for digits of one width, so a capture count does not shuffle the
+-- line about as it changes.
 header :: State -> Widget Event
 header state = container
   Adw.HeaderBar
   [ titleWidget
       (widget
         Adw.WindowTitle
-        [ #title := "Stones"
-        , #subtitle := maybe "No games open"
-                             (sessionMessage . snd)
-                             (showing state)
+        [ #title := maybe "Stones" (statusOf . snd) (showing state)
+        , #subtitle := maybe "" (detailOf . snd) (showing state)
+        , classes ["numeric"]
         ]
       )
   ]
   [ headerBarStart
-    (menuButton
-      [#label := "New Game", #tooltipText := "Open a game in a new tab"]
-      [ menuSection
-          Nothing
-          [ menuItem "9x9"   (NewTabPressed 9)
-          , menuItem "13x13" (NewTabPressed 13)
-          , menuItem "19x19" (NewTabPressed 19)
-          ]
-      ]
-    )
+    (action state "edit-undo-symbolic" "Undo" canUndo UndoPressed)
+  -- Packed from the right edge inward, so the menu is the button in
+  -- the corner, which is where a GNOME program keeps it.
+  , headerBarEnd (mainMenu state)
   , headerBarEnd
-    (widget
-      Gtk.Label
-      [ #label := maybe "" (opponentOf . snd) (showing state)
-      , classes ["dim-label"]
-      , #tooltipText := "The program this game is played against"
+    (action state
+            "media-skip-forward-symbolic"
+            "Pass, giving the move to the other player"
+            playable
+            Passed)
+  ]
+
+-- | A button in the header bar that does something to the game
+-- showing. A window with no game showing has the buttons, greyed.
+action
+  :: State -> Text -> Text -> (Session -> Bool) -> SessionEvent -> Widget Event
+action state icon tip enabled event = case showing state of
+  Nothing -> widget
+    Gtk.Button
+    [#iconName := icon, #tooltipText := tip, #sensitive := False]
+  Just (tab, session) -> widget
+    Gtk.Button
+    [ #iconName := icon
+    , #tooltipText := tip
+    , #sensitive := enabled session
+    , on #clicked (InTab tab event)
+    ]
+
+-- | The menu in the corner: what a game is opened with, and the one
+-- thing a player does to a game that is not worth a button of its own.
+mainMenu :: State -> Widget Event
+mainMenu state = menuButton
+  [ #iconName := "open-menu-symbolic"
+  , #primary := True
+  , #tooltipText := "Main Menu"
+  ]
+  [ menuSection
+    Nothing
+    [ subMenu
+        "New Game"
+        [ menuItem "9\215\&9"   (NewTabPressed 9)
+        , menuItem "13\215\&13" (NewTabPressed 13)
+        , menuItem "19\215\&19" (NewTabPressed 19)
+        ]
+    ]
+  , menuSection
+    Nothing
+    (Vector.fromList
+      [ menuItem "Resign" (InTab tab ResignPressed)
+      | (tab, _) <- maybe [] pure (showing state)
       ]
     )
   ]
+
+-- | Where the game stands, which is the window's title.
+statusOf :: Session -> Text
+statusOf session = case sessionOpponent session of
+  Starting -> "Starting\8230"
+  Gone _   -> "Stopped"
+  _ | finished game    -> ending session
+    | playable session -> "Your move"
+    | otherwise        -> "Thinking\8230"
+  where game = sessionGame session
+
+-- | How a game that is over ended.
+ending :: Session -> Text
+ending session = case winnerByResignation (sessionGame session) of
+  Just winner | winner == sessionHuman session -> "The engine resigned"
+              | otherwise                      -> "You resigned"
+  Nothing                                      -> "Game over"
+
+-- | The line under the title.
+--
+-- Ordinarily the numbers, which is what somebody looks down at while
+-- they play. When the game has something to say instead, it says it
+-- there: an engine that is gone, a score at the end, or a point the
+-- rules would not take a stone on.
+detailOf :: Session -> Text
+detailOf session = case sessionOpponent session of
+  Gone why -> why
+  _        -> case sessionNote session of
+    Just (Result  out ) -> "Result: " <> out
+    Just (Refused what) -> describeIllegal what
+    Nothing             -> capturesOf session
+
+-- | The board, and how many stones each player has taken.
+capturesOf :: Session -> Text
+capturesOf session =
+  size'
+    <> "  \183  Black "
+    <> took blackCaptured
+    <> "  \183  White "
+    <> took whiteCaptured
+ where
+  captures = gameCaptures (sessionGame session)
+  size' = let n = Text.pack (show (sessionSize session)) in n <> "\215" <> n
+  took field = Text.pack (show (field captures))
 
 -- | The games, one to a tab.
 games :: State -> Widget Event
@@ -340,91 +429,6 @@ board tab session = toEvent <$> goban
     , gobanCoordinates = True
     }
   toEvent (GobanClicked coord) = InTab tab (Clicked coord)
-
--- | The bar at the bottom, about the game showing: what has been taken
--- on the left, whose turn it is in the middle, and what the player can
--- do on the right.
---
--- A window with no game showing has one of these too, empty, so that
--- the bar does not appear and disappear as the last tab closes.
-footer :: State -> Widget Event
-footer state = centerBox
-  [classes ["toolbar"], #marginStart := 6, #marginEnd := 6]
-  (widget
-    Gtk.Label
-    [ #label := capturesLine state
-    , #tooltipText := "The board, and the stones each player has taken"
-    , classes ["dim-label"]
-    -- A narrow window would otherwise allocate this label more room
-    -- than the bar has, and it would run into the one in the middle.
-    , #ellipsize := Pango.EllipsizeModeEnd
-    , #maxWidthChars := 28
-    ]
-  )
-  (widget Gtk.Label
-          [#label := turnLine state, #ellipsize := Pango.EllipsizeModeEnd]
-  )
-  (container Gtk.Box [#spacing := 6] (buttons (showing state)))
- where
-  buttons Nothing = []
-  buttons (Just (tab, session)) =
-    [ BoxChild defaultBoxChildProperties $ button
-      tab
-      "Pass"
-      "Give the move to the other player"
-      (playable session)
-      Passed
-    , BoxChild defaultBoxChildProperties $ button
-      tab
-      "Undo"
-      "Take back your last move and the answer to it"
-      (canUndo session)
-      UndoPressed
-    , BoxChild defaultBoxChildProperties
-      $ button tab "Resign" "Give the game up" (playable session) ResignPressed
-    ]
-
--- | One button of the bottom bar, which acts on the game in this tab.
-button :: TabId -> Text -> Text -> Bool -> SessionEvent -> Widget Event
-button tab label tooltip enabled event = widget
-  Gtk.Button
-  [ #label := label
-  , #tooltipText := tooltip
-  , #sensitive := enabled
-  , on #clicked (InTab tab event)
-  ]
-
--- | How many stones each player has taken, and what board they are
--- playing on.
-capturesLine :: State -> Text
-capturesLine state = case showing state of
-  Nothing -> ""
-  Just (_, session) ->
-    size' <> "  ·  Black " <> took blackCaptured <> "  ·  White " <> took
-      whiteCaptured
-   where
-    captures = gameCaptures (sessionGame session)
-    size' = let n = Text.pack (show (sessionSize session)) in n <> "x" <> n
-    took field = Text.pack (show (field captures))
-
--- | Whose turn it is in the game showing, or how it ended.
-turnLine :: State -> Text
-turnLine state = case showing state of
-  Nothing           -> "No game"
-  Just (_, session) -> case sessionOpponent session of
-    Gone _   -> "The game has stopped."
-    Starting -> "Starting..."
-    _
-      | finished (sessionGame session) -> "The game is over."
-      | playable session -> "Your move ("
-        <> colorWord (sessionHuman session)
-        <> ")"
-      | otherwise -> "Thinking..."
-
--- | The name of a colour, for a sentence.
-colorWord :: Color -> Text
-colorWord Black = "Black"
-colorWord White = "White"
 
 -- | The window, ready to run.
 application

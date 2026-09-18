@@ -16,9 +16,12 @@ New Game opens another tab, and each tab has a GNU Go of its own,
 because one GNU Go holds one board. Closing a tab stops the GNU Go
 that was playing in it, and closing the last tab closes the window.
 
-Under the board are a Pass button, an Undo button that takes back your
-move and the answer to it, and a Resign button. They act on the game
-that is showing.
+The window is a header bar over a board, and nothing else, which is the
+shape the GNOME games have. Undo is at the start of the bar and Pass is
+at the end, because those are the two a player reaches for while
+playing. Resign and New Game are in the menu in the corner. The title
+says whose turn it is, and the line under it carries the numbers: the
+board, and how many stones each player has taken.
 
 ## Building
 
@@ -90,6 +93,11 @@ them: starting, idle, waiting for an answer, or gone. One value rather
 than a handful of flags, so that a game cannot be starting and broken at
 the same time, and so that a move can only be played where there is
 something to play it against.
+
+Almost everything the window says is worked out from the game and from
+its opponent, rather than stored as a line of text. A game keeps only
+the two things that are written nowhere else: the score at the end, and
+the reason the rules would not take the last stone.
 
 ## Playing on a server
 

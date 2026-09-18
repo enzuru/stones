@@ -42,7 +42,6 @@ library
                     , gi-gtk4-declarative             >=0.8  && <0.9
                     , gi-gtk4-declarative-adwaita     >=0.8  && <0.9
                     , gi-gtk4-declarative-app-simple  >=0.8  && <0.9
-                    , gi-pango                        >=1    && <2
                     , pipes                           >=4    && <5
                     , process                         >=1.6  && <1.7
                     , text                            >=1.2  && <2.2

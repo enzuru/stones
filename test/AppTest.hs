@@ -8,6 +8,7 @@ module AppTest
   )
 where
 
+import           Data.Text                      ( Text )
 import           Hedgehog
 import qualified Data.Vector                   as Vector
 
@@ -59,6 +60,12 @@ exits state event = case update' state event of
 -- started.
 oneGame :: State
 oneGame = next (next empty' (NewTabPressed 9)) (TabOpened 1 (Right silent))
+
+-- | Why the game in a tab stopped, if it did.
+brokenBecause :: Session -> Maybe Text
+brokenBecause session = case sessionOpponent session of
+  Gone why -> Just why
+  _        -> Nothing
 
 -- | The game in this tab.
 gameIn :: TabId -> State -> Maybe Session
@@ -150,7 +157,7 @@ prop_anOpponentThatWillNotStartBreaksOnlyItsOwnTab :: Property
 prop_anOpponentThatWillNotStartBreaksOnlyItsOwnTab = withTests 1 . property $ do
   let two    = next oneGame (NewTabPressed 19)
       failed = next two (TabOpened 2 (Left "no such program"))
-  fmap sessionMessage (gameIn 2 failed) === Just "no such program"
+  fmap brokenBecause (gameIn 2 failed) === Just (Just "no such program")
   fmap playable (gameIn 2 failed) === Just False
   fmap playable (gameIn 1 failed) === Just True
 
