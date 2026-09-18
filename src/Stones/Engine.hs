@@ -4,6 +4,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE NoFieldSelectors      #-}
+{-# LANGUAGE OverloadedStrings     #-}
 
 -- | What the program needs from an opponent.
 --
@@ -21,6 +22,9 @@
 module Stones.Engine
   ( Engine(..)
   , Opponents(..)
+  , Strength(..)
+  , strengths
+  , describeStrength
   )
 where
 
@@ -36,11 +40,35 @@ import           Go.Types
 -- knows what is still running when the window closes, so the two
 -- belong together.
 data Opponents = Opponents
-  { open  :: Int -> IO (Either Text Engine)
-    -- ^ An opponent of its own, for a game on a board this wide.
+  { open  :: Int -> Strength -> IO (Either Text Engine)
+    -- ^ An opponent of its own, for a game on a board this wide,
+    -- trying this hard.
   , close :: Engine -> IO ()
     -- ^ Let one go, when the game it was playing has closed.
   }
+
+-- | How hard an opponent is asked to try.
+--
+-- Three of them. A program that plays this well has ten steps to offer
+-- and a menu of ten numbers is a menu nobody reads, so what the player
+-- picks from is three words and what they mean is the program's
+-- business.
+data Strength
+  = Gentle
+  | Fair
+  | Fierce
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
+-- | Every strength, easiest first, which is the order a menu shows
+-- them in.
+strengths :: [Strength]
+strengths = [minBound .. maxBound]
+
+-- | What to call one in the window.
+describeStrength :: Strength -> Text
+describeStrength Gentle = "Gentle"
+describeStrength Fair   = "Fair"
+describeStrength Fierce = "Fierce"
 
 -- | An opponent, and the handful of things that can be asked of one.
 data Engine = Engine

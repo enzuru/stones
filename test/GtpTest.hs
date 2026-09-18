@@ -73,10 +73,10 @@ run = findExecutable "gnugo" >>= \found -> case found of
             else Right ()
         -- Two opponents at once, which is what a window with two tabs
         -- in it has, each holding a board of its own.
-        check "two engines at once" $ GnuGo.withGnuGo program (GnuGo.Level 1)
+        check "two engines at once" $ GnuGo.withGnuGo program
           $ \opponents -> do
-              first'  <- opponents.open 9
-              second' <- opponents.open 19
+              first'  <- opponents.open 9 Fierce
+              second' <- opponents.open 19 Fierce
               case (first', second') of
                 (Right one, Right other) -> do
                   told <- one.notify Black (Play (Coord 0 0))

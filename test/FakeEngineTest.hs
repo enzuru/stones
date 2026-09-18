@@ -162,10 +162,10 @@ prop_severalOpponentsAtOnceAndAllOfThemStopped = withTests 1 . property $ do
   -- A window with three tabs has three of these, and what is still
   -- running when the window closes is stopped with it.
   answers <- evalIO . withEngineNamed "several" obliging $ \path ->
-    GnuGo.withGnuGo path (GnuGo.Level 1) $ \opponents -> do
-      one   <- opponents.open 9
-      two   <- opponents.open 13
-      three <- opponents.open 19
+    GnuGo.withGnuGo path $ \opponents -> do
+      one   <- opponents.open 9 Fierce
+      two   <- opponents.open 13 Fierce
+      three <- opponents.open 19 Fierce
       -- One of them is let go by hand, the way a tab closing does it.
       case one of
         Right engine -> opponents.close engine

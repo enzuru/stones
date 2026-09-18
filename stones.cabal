@@ -45,6 +45,7 @@ library
                     , Stones.Goban
                     , Stones.Goban.Geometry
                     , Stones.Session
+                    , Stones.Setup
   build-depends:      base                            >=4.10 && <5
                     , containers                      >=0.6  && <0.9
                     , gi-adwaita                      >=1    && <2
@@ -93,6 +94,7 @@ test-suite stones-tests
                     , GtpTest
                     , ProtocolTest
                     , SessionTest
+                    , SetupTest
                     , TypesTest
                     , VertexTest
   build-depends:      base

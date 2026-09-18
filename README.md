@@ -18,10 +18,18 @@ You click a point and a stone goes down. GNU Go answers. The board
 counts the captures, closes a ko for a move, ends the game after two
 passes, and asks GNU Go what the score was.
 
-The window holds a game per tab, on a board of 9x9, 13x13 or 19x19.
-New Game opens another tab, and each tab has a GNU Go of its own,
-because one GNU Go holds one board. Closing a tab stops the GNU Go
-that was playing in it, and closing the last tab closes the window.
+A tab opens on a page that asks what to play: the board, the colour you
+take, and how hard the opponent should try. Nothing starts until you
+press the button on it. Until then there is no game and no process, and
+the program has nothing to guess with.
+
+![The page a tab opens on](docs/launch.png)
+
+The window holds a tab per game. New Game opens another tab, on the
+same page, already asking for whatever you started last. Each game has
+a GNU Go of its own, because one GNU Go holds one board. Closing a tab
+stops the GNU Go that was playing in it, and closing the last tab
+closes the window.
 
 The window is a header bar over a board, and nothing else, which is the
 shape the GNOME games have. Undo is at the start of the bar and Pass is
@@ -75,10 +83,14 @@ stones [options]
   --size <n>       Board width, from 2 to 19. The default is 19.
   --black          Play Black, which moves first. This is the default.
   --white          Play White, so the engine opens.
-  --level <n>      How hard GNU Go thinks, from 1 to 10. The default is 10.
+  --strength <name>  Gentle, Fair or Fierce. The default is Fierce.
   --engine <path>  The GNU Go program to run. The default is gnugo.
   --help           Print this and stop.
 ```
+
+The command line does not start a game. It says what the first page
+should already be asking for, which is for somebody who plays the same
+game every time.
 
 ## How it is put together
 
@@ -97,6 +109,7 @@ Stones.Goban.Geometry Where the lines and the stones go.
 Stones.Goban          The board, as a widget that draws itself with cairo.
 Stones.Session        One game, and what each thing the player does turns
                       it into.
+Stones.Setup          What a game is started from, and the page that asks.
 Stones.App            The tabs, the window, and where each answer belongs.
 ```
 
@@ -137,8 +150,9 @@ process to think. If the two ever disagree, the game stops and says so,
 rather than playing on from a position only half of the program believes
 in.
 
-A game's opponent is in one of four states, and `Stones.Session` names
-them: starting, idle, waiting for an answer, or gone. One value rather
+A tab is either choosing or playing, and a game's opponent is in one of
+four states, which `Stones.Session` names: starting, idle, waiting for
+an answer, or gone. One value rather
 than a handful of flags, so that a game cannot be starting and broken at
 the same time, and so that a move can only be played where there is
 something to play it against.

@@ -32,6 +32,7 @@ import           Go.Types
 import           Stones.App
 import           Stones.Engine
 import           Stones.Session
+import           Stones.Setup
 import           WidgetUtils
 
 -- | An opponent that does nothing and says so.
@@ -46,7 +47,7 @@ silent = Engine { name    = "nobody"
                 }
 
 source :: Opponents
-source = Opponents { open  = \_ -> pure (Right silent)
+source = Opponents { open  = \_ _ -> pure (Right silent)
                    , close = \_ -> pure ()
                    }
 
@@ -58,15 +59,24 @@ next state event = case update' state event of
 
 -- | A window with nothing open in it.
 noGames :: State
-noGames = startingState source Black
+noGames = startingState source asking
+
+-- | What the page of a new tab asks for here.
+asking :: Setup
+asking = Setup { size = 9, human = Black, strength = Fierce }
+
+-- | A window with one tab, still on the page that asks what to play.
+onePage :: State
+onePage = next noGames NewTabPressed
 
 -- | A window with one 9x9 game, whose opponent has started.
 oneGame :: State
-oneGame = next (next noGames (NewTabPressed 9)) (TabOpened 1 (Right silent))
+oneGame = next (next onePage (InSetup 1 StartPressed)) (TabOpened 1 (Right silent))
 
 -- | A window with a second game beside it.
 twoGames :: State
-twoGames = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
+twoGames = next (next (next oneGame NewTabPressed) (InSetup 2 StartPressed))
+                (TabOpened 2 (Right silent))
 
 -- | Build the window for a state and hand it and its widget over.
 built :: State -> (Gtk.Widget -> IO a) -> IO a
@@ -143,7 +153,7 @@ prop_aPatchedWindowShowsTheNewGame = withTests 1 . property $ do
 
 prop_aWindowWithABrokenGameSaysWhy :: Property
 prop_aWindowWithABrokenGameSaysWhy = withTests 1 . property $ do
-  let broken = next (next noGames (NewTabPressed 9))
+  let broken = next (next onePage (InSetup 1 StartPressed))
                     (TabOpened 1 (Left "no such program"))
   titles <- evalIO (built broken titlesUnder)
   titles === [("Stopped", "no such program")]
@@ -156,12 +166,42 @@ prop_aWindowCanBeListenedToAndLetGo = withTests 1 . property $ do
     cancel listening
   success
 
+prop_aTabOnItsPageShowsThePage :: Property
+prop_aTabOnItsPageShowsThePage = withTests 1 . property $ do
+  -- A tab opens on the page that asks what to play, so there is a
+  -- status page and its buttons, and no board at all.
+  (pages, areas, buttons, titles) <- evalIO . built onePage $ \widget' -> do
+    pages   <- descendantsOf Adw.StatusPage widget'
+    areas   <- descendantsOf Gtk.DrawingArea widget'
+    buttons <- descendantsOf Gtk.Button widget'
+    titles  <- titlesUnder widget'
+    pure (length pages, length areas, length buttons, titles)
+  pages === 1
+  areas === 0
+  -- Three boards, two colours, three strengths, and the one that
+  -- starts a game, beside the two in the header bar.
+  assert (buttons >= 9)
+  titles === [("New game", describeSetup asking)]
+
+prop_startingAGameTurnsThePageIntoABoard :: Property
+prop_startingAGameTurnsThePageIntoABoard = withTests 1 . property $ do
+  (said, areas) <- evalIO . runUI $ do
+    made    <- create (view' onePage)
+    let said = decision made (view' onePage) (view' oneGame)
+    patched <- apply made (view' onePage) (view' oneGame)
+    areas   <- descendantsOf Gtk.DrawingArea =<< widgetOf patched
+    pure (said, length areas)
+  -- The window is patched rather than thrown away, and what was a page
+  -- is a board.
+  said === Modified
+  areas === 1
+
 -- | The game showing in a window, for the tests that compare against
 -- what its own subtitle should say.
 theGame :: State -> Session
-theGame state = case state.games of
-  ((_, session) : _) -> session
-  []                 -> error "no games"
+theGame state = case state.openTabs of
+  ((_, Playing session) : _) -> session
+  _                          -> error "no game in the first tab"
 
 -- | Silence the unused import warning for Text, which the signatures
 -- above do not name but the titles are.

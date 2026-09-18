@@ -16,6 +16,7 @@ module Stones.Engine.GnuGo
   ( Level(..)
   , defaultLevel
   , levelRange
+  , levelFor
   , open
   , probe
   , withGnuGo
@@ -48,6 +49,15 @@ defaultLevel = Level 10
 -- | The levels GNU Go accepts, weakest first.
 levelRange :: (Int, Int)
 levelRange = (1, 10)
+
+-- | The level that answers a strength.
+--
+-- Three of GNU Go's ten: the weakest, the middle, and the one it plays
+-- at when nothing is said.
+levelFor :: Strength -> Level
+levelFor Gentle = Level 1
+levelFor Fair   = Level 5
+levelFor Fierce = defaultLevel
 
 -- | Start GNU Go and hand back an opponent that talks to it.
 --
@@ -164,11 +174,11 @@ probe program level = open program level 9 >>= \case
 -- running when the action ends is stopped. A tab that closes stops its
 -- own opponent, and stopping one twice does nothing, so a process is
 -- never left behind and never waited on twice.
-withGnuGo :: FilePath -> Level -> (Opponents -> IO a) -> IO a
-withGnuGo program level use = bracket (newIORef []) stopEveryone $ \running ->
+withGnuGo :: FilePath -> (Opponents -> IO a) -> IO a
+withGnuGo program use = bracket (newIORef []) stopEveryone $ \running ->
   use Opponents { open = openOne running, close = (.close) }
  where
-  openOne running n = open program level n >>= \case
+  openOne running n strength = open program (levelFor strength) n >>= \case
     Left  why    -> pure (Left why)
     Right engine -> Right engine <$ modifyIORef' running (engine :)
 
