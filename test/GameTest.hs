@@ -8,6 +8,7 @@ module GameTest
   )
 where
 
+import           Data.List                      ( isInfixOf )
 import           Hedgehog
 
 import           Go.Board
@@ -140,6 +141,89 @@ prop_undoPutsTheStonesBack = withTests 1 . property $ do
 prop_undoOfANewGameIsNothing :: Property
 prop_undoOfANewGameIsNothing = withTests 1 . property $ do
   (undoMove (newGame 9) == Nothing) === True
+
+prop_everyMoveIsWrittenDown :: Property
+prop_everyMoveIsWrittenDown = withTests 1 . property $ do
+  game <- run [(3, 3)] (newGame 9)
+  passed <- case playMove White Pass game of
+    Left  reason -> giveUp (show reason)
+    Right passed -> pure passed
+  played <- run [(4, 4)] passed
+  resigned <- case playMove White Resign played of
+    Left  reason   -> giveUp (show reason)
+    Right resigned -> pure resigned
+  gameMoves resigned
+    === [Resign, Play (Coord 4 4), Pass, Play (Coord 3 3)]
+
+prop_aPassCanBeTakenBack :: Property
+prop_aPassCanBeTakenBack = withTests 1 . property $ do
+  game <- run [(3, 3)] (newGame 9)
+  passed <- case playMove White Pass game of
+    Left  reason -> giveUp (show reason)
+    Right passed -> pure passed
+  gamePasses passed === 1
+  case undoMove passed of
+    Nothing   -> giveUp "nothing to take back"
+    Just back -> do
+      gamePasses back === 0
+      gameTurn back === White
+      gameMoves back === [Play (Coord 3 3)]
+
+prop_aFinishedGameTakesNoMoreMoves :: Property
+prop_aFinishedGameTakesNoMoreMoves = withTests 1 . property $ do
+  let game = newGame 9
+  over <- case playMove Black Pass game >>= playMove White Pass of
+    Left  reason -> giveUp (show reason)
+    Right over   -> pure over
+  finished over === True
+  playMove Black (Play (Coord 3 3)) over === Left GameOver
+  playMove Black Pass over === Left GameOver
+  legal Black (Coord 3 3) over === Left GameOver
+
+prop_askingWhetherAMoveIsLegalAnswersTheSame :: Property
+prop_askingWhetherAMoveIsLegalAnswersTheSame = withTests 1 . property $ do
+  let game = newGame 9
+  legal Black (Coord 3 3) game === Right ()
+  legal White (Coord 3 3) game === Left WrongPlayer
+  legal Black (Coord 9 0) game === Left OffBoard
+  played <- run [(3, 3)] game
+  legal White (Coord 3 3) played === Left Occupied
+
+prop_twoGamesThatStandTheSameAreTheSame :: Property
+prop_twoGamesThatStandTheSameAreTheSame = withTests 1 . property $ do
+  -- The same position, reached two ways: one game never moved, and the
+  -- other moved and took it back. What is behind them differs and they
+  -- are still the same game to play on from.
+  played <- run [(3, 3)] (newGame 9)
+  case undoMove played of
+    Nothing   -> giveUp "nothing to take back"
+    Just back -> do
+      assert (back == newGame 9)
+      assert (played /= newGame 9)
+      assert (newGame 9 /= newGame 13)
+
+prop_aGamePrintsWhereItStandsAndNotHowItGotThere :: Property
+prop_aGamePrintsWhereItStandsAndNotHowItGotThere =
+  withTests 1 . property $ do
+    played <- run [(3, 3)] (newGame 9)
+    let printed = show played
+    assert ("turn = White" `isInfixOf` printed)
+    assert ("passes = 0" `isInfixOf` printed)
+    assert ("resigned = Nothing" `isInfixOf` printed)
+    -- The history is as long as the game, so it is left out.
+    assert (not ("history" `isInfixOf` printed))
+    assert (not ("gameHistory" `isInfixOf` printed))
+
+prop_theWinnerOfAResignationIsTheOtherPlayer :: Property
+prop_theWinnerOfAResignationIsTheOtherPlayer = withTests 1 . property $ do
+  winnerByResignation (newGame 9) === Nothing
+  case playMove Black Resign (newGame 9) of
+    Left  reason -> giveUp (show reason)
+    Right game   -> winnerByResignation game === Just White
+  played <- run [(3, 3)] (newGame 9)
+  case playMove White Resign played of
+    Left  reason -> giveUp (show reason)
+    Right game   -> winnerByResignation game === Just Black
 
 tests :: Group
 tests = $$(discover)

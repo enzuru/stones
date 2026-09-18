@@ -13,9 +13,11 @@
 
 BUILD := .build
 
-SRC  := src
-APP  := app
-TEST := test
+SRC     := src
+APP     := app
+TEST    := test
+WIDGET  := widget-test
+INPUT   := input-test
 
 # Where the declarative GTK layer is. Point this somewhere else if your
 # checkout is not beside this one.
@@ -51,7 +53,12 @@ COVERAGE := $(BUILD)/coverage
 MEASURED := $(shell find $(SRC) -name '*.hs' \
   | sed -e 's|^$(SRC)/||' -e 's|/|.|g' -e 's|\.hs$$||' -e 's|^|--include=|')
 
-.PHONY: all build stones check coverage run clean
+# A nested X server, which is all the widget tests need: they build
+# widgets from code and read them back, so nothing has to be on screen,
+# but GTK still refuses to start without a display.
+XVFB := xvfb-run -s "-screen 0 1280x1024x24"
+
+.PHONY: all build stones check check-pure check-widget check-input coverage run clean
 
 # One compiler at a time. Each call below loads the whole gi-gtk
 # interface, so `make -j` multiplies the memory rather than dividing the
@@ -75,15 +82,40 @@ $(BUILD)/stones: $(SOURCES) $(APP)/Main.hs
 	ghc $(INCLUDES) -i$(APP) $(WARNINGS) $(PACKAGES) -threaded -O2 \
 	  -outputdir $(BUILD)/objects -o $@ $(APP)/Main.hs $(GHC_RTS)
 
-# The rules, the protocol, and the geometry. None of these need a
-# display: they are pure functions and a subprocess.
-check: $(BUILD)/tests
+check: check-pure check-widget check-input
+
+# The rules, the drawing, the protocol, and what each event does. None
+# of these need a display: they are functions, a cairo surface in
+# memory, and a subprocess.
+check-pure: $(BUILD)/tests
 	$(BUILD)/tests
 
 $(BUILD)/tests: $(SOURCES) $(wildcard $(TEST)/*.hs)
 	@mkdir -p $(BUILD)
 	ghc $(INCLUDES) -i$(TEST) $(WARNINGS) $(PACKAGES) -threaded \
 	  -outputdir $(BUILD)/test-objects -o $@ $(TEST)/Main.hs $(GHC_RTS)
+
+# The parts that are widgets, which GTK has to be running to build.
+check-widget: $(BUILD)/widget-tests
+	$(XVFB) $(BUILD)/widget-tests
+
+$(BUILD)/widget-tests: $(SOURCES) $(wildcard $(WIDGET)/*.hs)
+	@mkdir -p $(BUILD)
+	ghc $(INCLUDES) -i$(WIDGET) $(WARNINGS) $(PACKAGES) -threaded \
+	  -outputdir $(BUILD)/widget-objects -o $@ $(WIDGET)/Main.hs $(GHC_RTS)
+
+# A click on the board, made with real X11 input.
+#
+# GTK 4 reports a click through a gesture on the widget, and nothing in
+# it can make one happen from code, so this is the only way to reach
+# the path from a click to a stone.
+check-input: $(BUILD)/input-test
+	$(XVFB) tests/gui-input.sh $(BUILD)/input-test
+
+$(BUILD)/input-test: $(SOURCES) $(INPUT)/Main.hs
+	@mkdir -p $(BUILD)
+	ghc $(INCLUDES) -i$(INPUT) $(WARNINGS) $(PACKAGES) -threaded \
+	  -outputdir $(BUILD)/input-objects -o $@ $(INPUT)/Main.hs $(GHC_RTS)
 
 # What the tests reach, by GHC's own counting.
 #
@@ -99,14 +131,32 @@ coverage:
 	  $(WARNINGS) $(PACKAGES) -threaded \
 	  -outputdir $(COVERAGE)/objects -o $(COVERAGE)/tests \
 	  $(TEST)/Main.hs $(GHC_RTS)
+	ghc -fhpc -hpcdir $(COVERAGE)/mix $(INCLUDES) -i$(WIDGET) \
+	  $(WARNINGS) $(PACKAGES) -threaded \
+	  -outputdir $(COVERAGE)/widget-objects -o $(COVERAGE)/widget-tests \
+	  $(WIDGET)/Main.hs $(GHC_RTS)
+	ghc -fhpc -hpcdir $(COVERAGE)/mix $(INCLUDES) -i$(INPUT) \
+	  $(WARNINGS) $(PACKAGES) -threaded \
+	  -outputdir $(COVERAGE)/input-objects -o $(COVERAGE)/input-test \
+	  $(INPUT)/Main.hs $(GHC_RTS)
 	cd $(COVERAGE) && ./tests > run.log 2>&1
+	cd $(COVERAGE) && $(XVFB) ./widget-tests > widget-run.log 2>&1
+	cd $(COVERAGE) && $(XVFB) ../../tests/gui-input.sh ./input-test \
+	  > input-run.log 2>&1
+	# The two programs are compiled from the same sources into the same
+	# mix directory, so hpc adds their runs up into one report. Each has
+	# a module called Main and they are not the same module, which is
+	# the one thing hpc cannot add up, so those are left out.
+	@hpc sum --union --exclude=Main --output=$(COVERAGE)/all.tix \
+	  $(COVERAGE)/tests.tix $(COVERAGE)/widget-tests.tix \
+	  $(COVERAGE)/input-test.tix
 	@echo
 	@echo "== Stones, all told"
-	@hpc report $(COVERAGE)/tests.tix --hpcdir=$(COVERAGE)/mix \
+	@hpc report $(COVERAGE)/all.tix --hpcdir=$(COVERAGE)/mix \
 	  --srcdir=. $(MEASURED)
 	@echo
 	@echo "== Per module, least covered first"
-	@hpc report $(COVERAGE)/tests.tix --hpcdir=$(COVERAGE)/mix \
+	@hpc report $(COVERAGE)/all.tix --hpcdir=$(COVERAGE)/mix \
 	  --srcdir=. --per-module $(MEASURED) \
 	  | grep -B1 'expressions used' | grep -v '^--$$' | paste - - \
 	  | sed 's/-----//g' | sort -t'>' -k2 -n

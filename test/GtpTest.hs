@@ -31,10 +31,16 @@ run = findExecutable "gnugo" >>= \found -> case found of
     pure True
   Just program -> do
     Text.putStrLn "GtpTest: talking to gnugo."
-    opened <- GnuGo.open program (GnuGo.Level 1) 9
-    case opened of
-      Left problem -> failed ("could not start it: " <> problem)
-      Right engine -> do
+    -- A program that is not there is a line on the terminal rather
+    -- than a window with a tab that never starts.
+    missing <- GnuGo.probe "/nonexistent-gnugo" GnuGo.defaultLevel
+    present <- GnuGo.probe program (GnuGo.Level 1)
+    opened  <- GnuGo.open program (GnuGo.Level 1) 9
+    case (missing, present, opened) of
+      (Right (), _, _) -> failed "it found an engine that is not there"
+      (_, Left why, _) -> failed ("it could not find gnugo: " <> why)
+      (_, _, Left problem) -> failed ("could not start it: " <> problem)
+      (_, _, Right engine) -> do
         failures <- newIORef (0 :: Int)
         let check name action = action >>= \outcome -> case outcome of
               Right () -> pure ()
@@ -60,6 +66,22 @@ run = findExecutable "gnugo" >>= \found -> case found of
           Right result -> if Text.null result
             then Left "it gave an empty score"
             else Right ()
+        -- Two opponents at once, which is what a window with two tabs
+        -- in it has, each holding a board of its own.
+        check "two engines at once" $ GnuGo.withGnuGo program (GnuGo.Level 1)
+          $ \opponents -> do
+              first'  <- openOpponent opponents 9
+              second' <- openOpponent opponents 19
+              case (first', second') of
+                (Right one, Right other) -> do
+                  told <- engineNotify one Black (Play (Coord 0 0))
+                  -- A19 is a point on the second board and not on the
+                  -- first, so the two are not the same board.
+                  far  <- engineNotify other Black (Play (Coord 18 18))
+                  closeOpponent opponents one
+                  closeOpponent opponents other
+                  pure (told >> far)
+                _ -> pure (Left "could not start two")
         engineClose engine
         count <- readIORef failures
         if count == 0

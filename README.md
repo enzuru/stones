@@ -76,14 +76,35 @@ Stones.Session        One game, and what each thing the player does turns
 Stones.App            The tabs, the window, and where each answer belongs.
 ```
 
-The tests are in `test/`. The rules and the geometry are checked as pure
-functions, `Stones.Session` and `Stones.App` are driven as state
-machines with a fake engine in place of a real one, and one test starts
-a real GNU Go and talks to it. None of them need a display.
+There are three sets of tests, and `make check` runs all three.
 
-`make coverage` says what they reach. It builds the test program a
-second time with GHC's own coverage counting, so it is not part of
-`make check`.
+`test/` needs nothing. The rules, the names, and the geometry are pure
+functions; the board is drawn onto a cairo surface in memory and the
+pixels are read back; `Stones.Session` and `Stones.App` are driven as
+state machines against an opponent that is a record of answers; and the
+protocol is checked against engines that are shell scripts, which can
+be made to refuse, to babble, or to die. One test starts a real GNU Go
+and plays a few moves against it, and says so and passes if there is
+none on the machine.
+
+`widget-test/` needs GTK, and runs under a nested X server. It builds
+the window for real and reads it back: that the tree is one GTK
+accepts, that a move patches the window rather than rebuilding it, and
+that the board keeps its widget and its controllers across a patch.
+
+`tests/gui-input.sh` needs GTK and `xdotool`. GTK 4 reports a click
+through a gesture, and nothing in it can make one happen from code, so
+this is the only way to reach the path from a click on the board to a
+stone on the board. It starts the window, clicks on it, and reads back
+where the stones went. It is driven from the Makefile rather than from
+cabal, because cabal has no way to run a test that needs a display and
+a program to click with.
+
+`make coverage` says what they all reach. It builds each of the three a
+second time with GHC's own coverage counting and adds the runs up, so
+it is not part of `make check`. It stands at 94% of expressions, and
+what is left is mostly instances the compiler wrote and attribute names
+that are types rather than values.
 
 The program keeps the rules itself and also tells the engine about every
 move, so both hold the same position. Two boards rather than one is what
