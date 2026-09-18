@@ -31,6 +31,7 @@ import           Control.Exception              ( IOException
                                                 , SomeException
                                                 , try
                                                 )
+import           Control.Monad                  ( when )
 import           Data.IORef
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
@@ -45,6 +46,7 @@ data Gtp = Gtp
   , gtpProcess :: ProcessHandle
   , gtpLock    :: MVar ()
   , gtpCounter :: IORef Int
+  , gtpStopped :: IORef Bool
   , gtpName    :: Text
   }
 
@@ -82,23 +84,33 @@ start program arguments = do
   hSetEncoding  output utf8
   lock    <- newMVar ()
   counter <- newIORef 0
+  stopped <- newIORef False
   pure Gtp { gtpIn      = input
            , gtpOut     = output
            , gtpProcess = handle'
            , gtpLock    = lock
            , gtpCounter = counter
+           , gtpStopped = stopped
            , gtpName    = Text.pack program
            }
 
 -- | Ask the program to quit, and wait for it. A program that will not
 -- quit is killed, so that this never hangs on the way out.
+--
+-- Stopping a program that has already been stopped does nothing. A
+-- program is let go when its tab closes and again when the whole
+-- window closes, and waiting twice on one process is an error, so the
+-- second call has to be the one that does nothing.
 stop :: Gtp -> IO ()
 stop gtp = do
-  _ <- (try (command gtp "quit") :: IO (Either SomeException (Either GtpError Text)))
-  _ <- (try (hClose (gtpIn gtp)) :: IO (Either IOException ()))
-  terminateProcess (gtpProcess gtp)
-  _ <- waitForProcess (gtpProcess gtp)
-  pure ()
+  first <- atomicModifyIORef' (gtpStopped gtp) (\done -> (True, not done))
+  when first $ do
+    _ <- (try (command gtp "quit") :: IO
+           (Either SomeException (Either GtpError Text)))
+    _ <- (try (hClose (gtpIn gtp)) :: IO (Either IOException ()))
+    terminateProcess (gtpProcess gtp)
+    _ <- waitForProcess (gtpProcess gtp)
+    pure ()
 
 -- | Is the program still running?
 alive :: Gtp -> IO Bool

@@ -1,18 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
--- | What each event does to the window's state.
---
--- The engine here is a fake. 'Stones.Engine.Engine' is a record of
--- actions, so an opponent that answers whatever the test wants is a
--- record with those answers in it, and the state machine can be driven
--- without a process or a window.
+-- | The tabs: which games are open, which one is showing, and where
+-- each answer belongs.
 module AppTest
   ( tests
   )
 where
 
 import           Hedgehog
+import qualified Data.Vector                   as Vector
 
 import           GI.Gtk.Declarative.App.Simple  ( Transition(..) )
 
@@ -20,11 +17,9 @@ import           Go.Game
 import           Go.Types
 import           Stones.App
 import           Stones.Engine
+import           Stones.Session
 
 -- | An opponent that does nothing and says so.
---
--- None of these run: 'update'' is a pure function, and what it hands
--- back is a command the application would run, which the test does not.
 silent :: Engine
 silent = Engine { engineName    = "nobody"
                 , engineNewGame = \_ -> pure (Right ())
@@ -35,117 +30,129 @@ silent = Engine { engineName    = "nobody"
                 , engineClose   = pure ()
                 }
 
--- | The state the window opens with, playing Black on a 9x9 board.
-opening :: State
-opening = startingState silent Black 9
+-- | A source of opponents that hands out the same silent one. Nothing
+-- here runs: 'update'' is a function, and the commands it answers with
+-- are not run by these tests.
+source :: Opponents
+source = Opponents { openOpponent  = \_ -> pure (Right silent)
+                   , closeOpponent = \_ -> pure ()
+                   }
 
--- | The state after the event that sets the first board up.
-running :: State
-running = next opening (NewGamePressed 9)
+-- | A window with nothing open in it, playing Black.
+empty' :: State
+empty' = startingState source Black
 
--- | The state an event leads to. A transition that exits has no state,
--- and nothing here exits.
+-- | Where the window lands after an event. Nothing here exits, except
+-- where a test says so.
 next :: State -> Event -> State
 next state event = case update' state event of
   Transition state' _ -> state'
   Exit                -> error "the transition exited"
 
-prop_theFirstBoardIsSetUpRatherThanQueued :: Property
-prop_theFirstBoardIsSetUpRatherThanQueued = withTests 1 . property $ do
-  -- The window opens with nothing asked of the engine, so the event it
-  -- sends itself has to start the game rather than wait for an answer
-  -- that is not coming.
-  stateThinking opening === False
-  statePending opening === Nothing
-  stateThinking running === True
-  statePending running === Nothing
+-- | Did this event end the window?
+exits :: State -> Event -> Bool
+exits state event = case update' state event of
+  Exit         -> True
+  Transition{} -> False
 
-prop_aMoveGoesDownAndTheEngineIsAsked :: Property
-prop_aMoveGoesDownAndTheEngineIsAsked = withTests 1 . property $ do
-  let ready  = next running (FromEngine Ready)
-      played = next ready (Clicked (Coord 3 3))
-  stateThinking ready === False
-  gameLast (stateGame played) === Just (Coord 3 3)
-  gameTurn (stateGame played) === White
-  stateThinking played === True
+-- | A window with one game open on a 9x9 board, whose opponent has
+-- started.
+oneGame :: State
+oneGame = next (next empty' (NewTabPressed 9)) (TabOpened 1 (Right silent))
 
-prop_theBoardTakesNoClicksWhileTheEngineThinks :: Property
-prop_theBoardTakesNoClicksWhileTheEngineThinks = withTests 1 . property $ do
-  let ready   = next running (FromEngine Ready)
-      played  = next ready (Clicked (Coord 3 3))
-      ignored = next played (Clicked (Coord 4 4))
-  gameLast (stateGame ignored) === Just (Coord 3 3)
-  gameMoves (stateGame ignored) === gameMoves (stateGame played)
+-- | The game in this tab.
+gameIn :: TabId -> State -> Maybe Session
+gameIn tab state = lookup tab (stateGames state)
 
-prop_aNewGameAskedForWhileThinkingWaitsAndThenStarts :: Property
-prop_aNewGameAskedForWhileThinkingWaitsAndThenStarts =
-  withTests 1 . property $ do
-    let ready   = next running (FromEngine Ready)
-        played  = next ready (Clicked (Coord 3 3))
-        asked   = next played (NewGamePressed 13)
-        started = next asked (FromEngine (Moved (Play (Coord 4 4))))
-    -- Nothing is asked of the engine while it is answering.
-    statePending asked === Just 13
-    boardSize (stateGame asked) === 9
-    -- Its answer lets the new board through, and the answer itself is
-    -- dropped: it belongs to the game that has just been replaced.
-    statePending started === Nothing
-    boardSize (stateGame started) === 13
-    gameMoves (stateGame started) === []
-    stateThinking started === True
+prop_theFirstTabIsOpenedAndShown :: Property
+prop_theFirstTabIsOpenedAndShown = withTests 1 . property $ do
+  let opening = next empty' (NewTabPressed 9)
+  map fst (stateGames empty') === []
+  map fst (stateGames opening) === [1]
+  stateShowing opening === Just 1
+  -- It has no opponent until one has started, so it takes no moves.
+  fmap playable (gameIn 1 opening) === Just False
+  fmap playable (gameIn 1 oneGame) === Just True
 
-prop_aBrokenEngineStopsTheGame :: Property
-prop_aBrokenEngineStopsTheGame = withTests 1 . property $ do
-  let ready  = next running (FromEngine Ready)
-      played = next ready (Clicked (Coord 3 3))
-      broken = next played (FromEngine (Failed "the pipe closed"))
-      after  = next broken (Clicked (Coord 5 5))
-  stateBroken broken === True
-  stateThinking broken === False
-  stateMessage broken === "the pipe closed"
-  -- A broken game takes no more moves.
-  gameLast (stateGame after) === Just (Coord 3 3)
+prop_eachTabGetsAGameAndAnOpponentOfItsOwn :: Property
+prop_eachTabGetsAGameAndAnOpponentOfItsOwn = withTests 1 . property $ do
+  let two   = next oneGame (NewTabPressed 19)
+      ready' = next two (TabOpened 2 (Right silent))
+  map fst (stateGames ready') === [1, 2]
+  stateShowing ready' === Just 2
+  fmap sessionSize (gameIn 1 ready') === Just 9
+  fmap sessionSize (gameIn 2 ready') === Just 19
 
-prop_theEngineResigningEndsTheGame :: Property
-prop_theEngineResigningEndsTheGame = withTests 1 . property $ do
-  let ready    = next running (FromEngine Ready)
-      played   = next ready (Clicked (Coord 3 3))
-      resigned = next played (FromEngine (Moved Resign))
-  finished (stateGame resigned) === True
-  winnerByResignation (stateGame resigned) === Just Black
-  stateThinking resigned === False
+prop_aMoveGoesToTheTabItWasPlayedIn :: Property
+prop_aMoveGoesToTheTabItWasPlayedIn = withTests 1 . property $ do
+  let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
+      played = next two (InTab 1 (Clicked (Coord 3 3)))
+  fmap (gameLast . sessionGame) (gameIn 1 played) === Just (Just (Coord 3 3))
+  fmap (gameLast . sessionGame) (gameIn 2 played) === Just Nothing
 
-prop_aMoveTheRulesRefuseStopsTheGame :: Property
-prop_aMoveTheRulesRefuseStopsTheGame = withTests 1 . property $ do
-  -- The engine answering with a point that already has a stone on it
-  -- means the two boards have drifted apart.
-  let ready    = next running (FromEngine Ready)
-      played   = next ready (Clicked (Coord 3 3))
-      disagree = next played (FromEngine (Moved (Play (Coord 3 3))))
-  stateBroken disagree === True
-  stateThinking disagree === False
+prop_anAnswerForAClosedTabIsDropped :: Property
+prop_anAnswerForAClosedTabIsDropped = withTests 1 . property $ do
+  -- An opponent stopped in the middle of thinking answers with a
+  -- failure, and by then its tab is gone.
+  let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
+      closed = next two (TabClosePressed "game-1")
+      stray  = next closed (InTab 1 (Answered (Failed "stopped")))
+  map fst (stateGames closed) === [2]
+  map fst (stateGames stray) === [2]
+  stateShowing stray === Just 2
 
-prop_undoTakesBackBothMoves :: Property
-prop_undoTakesBackBothMoves = withTests 1 . property $ do
-  let ready    = next running (FromEngine Ready)
-      played   = next ready (Clicked (Coord 3 3))
-      answered = next played (FromEngine (Moved (Play (Coord 4 4))))
-      undone   = next answered UndoPressed
-  gameMoves (stateGame answered) === [Play (Coord 4 4), Play (Coord 3 3)]
-  gameMoves (stateGame undone) === []
-  gameTurn (stateGame undone) === Black
-  stateThinking undone === True
+prop_closingTheShowingTabShowsAnother :: Property
+prop_closingTheShowingTabShowsAnother = withTests 1 . property $ do
+  let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
+      first' = next two (TabSelected "game-1")
+      closed = next first' (TabClosePressed "game-1")
+  stateShowing first' === Just 1
+  stateShowing closed === Just 2
 
-prop_twoPassesEndTheGameAndAskForAScore :: Property
-prop_twoPassesEndTheGameAndAskForAScore = withTests 1 . property $ do
-  let ready  = next running (FromEngine Ready)
-      passed = next ready Passed
-      both   = next passed (FromEngine (Moved Pass))
-      scored = next both (FromEngine (Scored "B+2.5"))
-  finished (stateGame both) === True
-  stateThinking both === True
-  stateMessage scored === "Result: B+2.5"
-  stateThinking scored === False
+prop_closingAnotherTabLeavesTheShowingOneAlone :: Property
+prop_closingAnotherTabLeavesTheShowingOneAlone = withTests 1 . property $ do
+  let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
+      closed = next two (TabClosePressed "game-1")
+  stateShowing two === Just 2
+  stateShowing closed === Just 2
+
+prop_theWindowClosesWithItsLastTab :: Property
+prop_theWindowClosesWithItsLastTab = withTests 1 . property $ do
+  exits oneGame (TabClosePressed "game-1") === True
+  -- A tab that is not the last one only closes itself.
+  let two = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
+  exits two (TabClosePressed "game-1") === False
+
+prop_aTabNameNothingAnswersToIsIgnored :: Property
+prop_aTabNameNothingAnswersToIsIgnored = withTests 1 . property $ do
+  map fst (stateGames (next oneGame (TabClosePressed "game-99"))) === [1]
+  stateShowing (next oneGame (TabSelected "game-99")) === Nothing
+
+prop_tabNamesAreNotReusedWhenATabCloses :: Property
+prop_tabNamesAreNotReusedWhenATabCloses = withTests 1 . property $ do
+  -- A name that came back would send an opponent's answer to whichever
+  -- game happened to be holding the name at the time.
+  let two    = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
+      closed = next two (TabClosePressed "game-1")
+      third  = next closed (NewTabPressed 9)
+  map fst (stateGames third) === [2, 3]
+
+prop_draggingATabChangesTheOrder :: Property
+prop_draggingATabChangesTheOrder = withTests 1 . property $ do
+  let two      = next (next oneGame (NewTabPressed 19)) (TabOpened 2 (Right silent))
+      reordered = next two (TabsReordered (Vector.fromList ["game-2", "game-1"]))
+  map fst (stateGames two) === [1, 2]
+  map fst (stateGames reordered) === [2, 1]
+  -- The games themselves move with their tabs.
+  fmap sessionSize (gameIn 2 reordered) === Just 19
+
+prop_anOpponentThatWillNotStartBreaksOnlyItsOwnTab :: Property
+prop_anOpponentThatWillNotStartBreaksOnlyItsOwnTab = withTests 1 . property $ do
+  let two    = next oneGame (NewTabPressed 19)
+      failed = next two (TabOpened 2 (Left "no such program"))
+  fmap sessionMessage (gameIn 2 failed) === Just "no such program"
+  fmap playable (gameIn 2 failed) === Just False
+  fmap playable (gameIn 1 failed) === Just True
 
 tests :: Group
 tests = $$(discover)

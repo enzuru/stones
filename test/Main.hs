@@ -17,6 +17,7 @@ import qualified BoardTest
 import qualified GameTest
 import qualified GeometryTest
 import qualified GtpTest
+import qualified SessionTest
 import qualified VertexTest
 
 main :: IO ()
@@ -27,6 +28,7 @@ main = do
     , GameTest.tests
     , VertexTest.tests
     , GeometryTest.tests
+    , SessionTest.tests
     , AppTest.tests
     ]
   protocol <- GtpTest.run

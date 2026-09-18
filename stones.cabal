@@ -31,6 +31,7 @@ library
                     , Stones.Engine.Gtp
                     , Stones.Goban
                     , Stones.Goban.Geometry
+                    , Stones.Session
   build-depends:      base                            >=4.10 && <5
                     , containers                      >=0.6  && <0.9
                     , gi-adwaita                      >=1    && <2
@@ -41,6 +42,7 @@ library
                     , gi-gtk4-declarative             >=0.8  && <0.9
                     , gi-gtk4-declarative-adwaita     >=0.8  && <0.9
                     , gi-gtk4-declarative-app-simple  >=0.8  && <0.9
+                    , gi-pango                        >=1    && <2
                     , pipes                           >=4    && <5
                     , process                         >=1.6  && <1.7
                     , text                            >=1.2  && <2.2
@@ -70,10 +72,12 @@ test-suite stones-tests
                     , GameTest
                     , GeometryTest
                     , GtpTest
+                    , SessionTest
                     , VertexTest
   build-depends:      base
                     , containers
                     , directory                       >=1.3  && <1.4
+                    , vector                          >=0.12 && <0.14
                     , gi-gtk4-declarative-app-simple
                     , hedgehog                        >=1    && <2
                     , stones

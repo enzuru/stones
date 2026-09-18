@@ -11,9 +11,14 @@ You click a point and a stone goes down. GNU Go answers. The board
 counts the captures, closes a ko for a move, ends the game after two
 passes, and asks GNU Go what the score was.
 
-The window has a board of 9x9, 13x13 or 19x19, a Pass button, an Undo
-button that takes back your move and the answer to it, and a Resign
-button.
+The window holds a game per tab, on a board of 9x9, 13x13 or 19x19.
+New Game opens another tab, and each tab has a GNU Go of its own,
+because one GNU Go holds one board. Closing a tab stops the GNU Go
+that was playing in it, and closing the last tab closes the window.
+
+Under the board are a Pass button, an Undo button that takes back your
+move and the answer to it, and a Resign button. They act on the game
+that is showing.
 
 ## Building
 
@@ -56,13 +61,16 @@ Go.Board              One position, and what a stone does to it.
 Go.Game               A game: whose turn, ko, passing, and taking a move back.
 Go.Vertex             The names the Go Text Protocol gives to points.
 
-Stones.Engine         What the program needs from an opponent.
+Stones.Engine         What the program needs from an opponent, and where
+                      a new game gets one.
 Stones.Engine.Gtp     Talking to a program over the Go Text Protocol.
 Stones.Engine.GnuGo   GNU Go as an opponent.
 
 Stones.Goban.Geometry Where the lines and the stones go.
 Stones.Goban          The board, as a widget that draws itself with cairo.
-Stones.App            The window, and what each event does to it.
+Stones.Session        One game, and what each thing the player does turns
+                      it into.
+Stones.App            The tabs, the window, and where each answer belongs.
 ```
 
 The tests are in `test/`. The rules and the geometry are checked as pure
@@ -77,12 +85,20 @@ process to think. If the two ever disagree, the game stops and says so,
 rather than playing on from a position only half of the program believes
 in.
 
+A game's opponent is in one of four states, and `Stones.Session` names
+them: starting, idle, waiting for an answer, or gone. One value rather
+than a handful of flags, so that a game cannot be starting and broken at
+the same time, and so that a move can only be played where there is
+something to play it against.
+
 ## Playing on a server
 
 Everything the program asks of an opponent is one of the seven actions
 in `Stones.Engine`: set up a board, take a move, give a move, take moves
-back, give a score, and let go. GNU Go is one such opponent. A game on
-[online-go.com](https://online-go.com/) is meant to be the next one.
+back, give a score, and let go. Where a tab gets one is the `Opponents`
+record beside it. GNU Go is one such opponent, and a game on
+[online-go.com](https://online-go.com/) is meant to be the next one, in
+a tab beside a game against GNU Go.
 
 That seam carries the moves, and a server needs more than the moves: a
 list of games to join, a clock, and a connection that pushes the

@@ -12,7 +12,6 @@ module Main
   )
 where
 
-import           Control.Exception              ( bracket )
 import           Control.Monad                  ( void )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
@@ -30,7 +29,6 @@ import           GI.Gtk.Declarative.App.Simple  ( startInApplication )
 
 import           Go.Types
 import qualified Stones.App                    as Stones
-import           Stones.Engine                  ( engineClose )
 import qualified Stones.Engine.GnuGo           as GnuGo
 
 -- | What the command line asked for.
@@ -56,21 +54,27 @@ main = do
     Left  message -> failWith message
     Right Nothing -> usage >>= Text.putStrLn >> exitSuccess
     Right (Just options) -> do
-      opened <- GnuGo.open (optionProgram options)
-                           (optionLevel options)
-                           (optionSize options)
-      case opened of
+      -- The window opens its first game a moment after it appears, so
+      -- an engine that is not there would show up as a tab that never
+      -- starts. Trying one here turns that into a line on the terminal
+      -- and an exit code.
+      working <- GnuGo.probe (optionProgram options) (optionLevel options)
+      case working of
         Left  problem -> failWith problem
-        Right engine  -> bracket (pure engine) engineClose $ \engine' -> do
-          application <- Adw.applicationNew (Just "com.github.enzuru.Stones")
-                                            [Gio.ApplicationFlagsDefaultFlags]
-          _ <- Gio.onApplicationActivate application . void $ startInApplication
-            application
-            (Stones.application engine'
-                                (optionColor options)
-                                (optionSize options)
-            )
-          void (Gio.applicationRun application Nothing)
+        Right () ->
+          GnuGo.withGnuGo (optionProgram options) (optionLevel options)
+            $ \opponents -> do
+                application <- Adw.applicationNew
+                  (Just "com.github.enzuru.Stones")
+                  [Gio.ApplicationFlagsDefaultFlags]
+                _ <- Gio.onApplicationActivate application . void
+                  $ startInApplication
+                      application
+                      (Stones.application opponents
+                                          (optionColor options)
+                                          (optionSize options)
+                      )
+                void (Gio.applicationRun application Nothing)
 
 -- | Say what went wrong and stop.
 failWith :: Text -> IO a

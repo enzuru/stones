@@ -11,12 +11,16 @@ module Stones.Engine.GnuGo
   , defaultLevel
   , levelRange
   , open
+  , probe
+  , withGnuGo
   )
 where
 
 import           Control.Exception              ( SomeException
+                                                , bracket
                                                 , try
                                                 )
+import           Data.Foldable                  ( for_ )
 import           Data.IORef
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
@@ -123,3 +127,36 @@ score gtp = report (Gtp.command gtp "final_score")
 colorName :: Color -> Text
 colorName Black = "black"
 colorName White = "white"
+
+-- | Make sure the program is there and speaks the protocol.
+--
+-- A window opens its first game a moment after it appears, and an
+-- engine that is not there would show up as a tab that never starts.
+-- This is what turns that into a line on the terminal and an exit
+-- code, which is what somebody running the program from a script
+-- wants.
+probe :: FilePath -> Level -> IO (Either Text ())
+probe program level = open program level 9 >>= \case
+  Left  why    -> pure (Left why)
+  Right engine -> Right () <$ engineClose engine
+
+-- | Opponents that are GNU Go processes, for as long as this action
+-- runs.
+--
+-- Every process started here is written down, and whatever is still
+-- running when the action ends is stopped. A tab that closes stops its
+-- own opponent, and stopping one twice does nothing, so a process is
+-- never left behind and never waited on twice.
+withGnuGo :: FilePath -> Level -> (Opponents -> IO a) -> IO a
+withGnuGo program level use = bracket (newIORef []) stopEveryone $ \running ->
+  use Opponents { openOpponent  = openOne running
+                , closeOpponent = engineClose
+                }
+ where
+  openOne running n = open program level n >>= \case
+    Left  why    -> pure (Left why)
+    Right engine -> Right engine <$ modifyIORef' running (engine :)
+
+  stopEveryone running = do
+    started <- readIORef running
+    for_ started engineClose
