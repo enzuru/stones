@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
@@ -22,6 +24,8 @@ import qualified GI.Gdk                        as Gdk
 import qualified GI.Gio                        as Gio
 import qualified GI.Gtk                        as Gtk
 import           Hedgehog
+import           System.Environment             ( lookupEnv )
+import           System.FilePath                ( (</>) )
 
 import           WidgetUtils                    ( runUI )
 
@@ -30,16 +34,20 @@ identifier :: Text
 identifier = "com.github.enzuru.Stones"
 
 -- | The theme, with this source tree's icons among the places it
--- looks. The tests run from the top of the tree, which is where the
--- program looks when it is run from its own source.
+-- looks.
+--
+-- Where the tree is comes from @STONES_DATA_DIR@, falling back to
+-- @data@ beside the working directory, which is the same pair the
+-- program itself looks in.
 themeHere :: IO Gtk.IconTheme
 themeHere = do
+  told    <- lookupEnv "STONES_DATA_DIR"
   display <- Gdk.displayGetDefault
   case display of
     Nothing       -> error "there is no display"
     Just display' -> do
       theme <- Gtk.iconThemeGetForDisplay display'
-      Gtk.iconThemeAddSearchPath theme "data/icons"
+      Gtk.iconThemeAddSearchPath theme (maybe "data" id told </> "icons")
       pure theme
 
 -- | The file the theme answers with for this name, if it answers with

@@ -142,10 +142,17 @@ coverage:
 	  $(WARNINGS) $(PACKAGES) -threaded \
 	  -outputdir $(COVERAGE)/input-objects -o $(COVERAGE)/input-test \
 	  $(INPUT)/Main.hs $(GHC_RTS)
-	cd $(COVERAGE) && ./tests > run.log 2>&1
-	cd $(COVERAGE) && $(XVFB) ./widget-tests > widget-run.log 2>&1
-	cd $(COVERAGE) && $(XVFB) ../../tests/gui-input.sh ./input-test \
-	  > input-run.log 2>&1
+	# Run from here rather than from the coverage directory, so that
+	# what the tests see around them is what they see under `make
+	# check`. HPCTIXFILE is what says where the counts are written,
+	# which is the only reason the directory came into it.
+	HPCTIXFILE=$(COVERAGE)/tests.tix $(COVERAGE)/tests \
+	  > $(COVERAGE)/run.log 2>&1
+	HPCTIXFILE=$(COVERAGE)/widget-tests.tix $(XVFB) $(COVERAGE)/widget-tests \
+	  > $(COVERAGE)/widget-run.log 2>&1
+	HPCTIXFILE=$(COVERAGE)/input-test.tix \
+	  $(XVFB) tests/gui-input.sh $(COVERAGE)/input-test \
+	  > $(COVERAGE)/input-run.log 2>&1
 	# The two programs are compiled from the same sources into the same
 	# mix directory, so hpc adds their runs up into one report. Each has
 	# a module called Main and they are not the same module, which is

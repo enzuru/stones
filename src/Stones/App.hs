@@ -1,6 +1,9 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedLabels  #-}
 {-# LANGUAGE OverloadedLists   #-}
@@ -76,16 +79,16 @@ type TabId = Int
 
 -- | Everything the window shows.
 data State = State
-  { stateGames     :: [(TabId, Session)]
+  { games     :: [(TabId, Session)]
     -- ^ The open games, in the order their tabs are in.
-  , stateShowing   :: Maybe TabId
+  , showing   :: Maybe TabId
     -- ^ The tab whose game the bars at the top and the bottom are
     -- about.
-  , stateNextTab   :: TabId
+  , nextTab   :: TabId
     -- ^ The name the next tab gets.
-  , stateHuman     :: Color
+  , human     :: Color
     -- ^ The colour the player takes in a new game.
-  , stateOpponents :: Opponents
+  , opponents :: Opponents
     -- ^ Where a new tab gets its opponent.
   }
 
@@ -109,11 +112,11 @@ data Event
 -- later one are the same piece of code, and so that the window is on
 -- the screen while its first opponent is starting.
 startingState :: Opponents -> Color -> State
-startingState opponents human = State { stateGames     = []
-                                      , stateShowing   = Nothing
-                                      , stateNextTab   = 1
-                                      , stateHuman     = human
-                                      , stateOpponents = opponents
+startingState opponents human = State { games     = []
+                                      , showing   = Nothing
+                                      , nextTab   = 1
+                                      , human     = human
+                                      , opponents = opponents
                                       }
 
 -- * Updating
@@ -161,11 +164,11 @@ decide state = \case
 
   InTab tab event              -> inTab state tab (`step` event)
 
-  TabSelected key              -> carry state { stateShowing = tabOf state key }
+  TabSelected key              -> carry state { showing = tabOf state key }
 
   TabClosePressed key          -> closeTab state key
 
-  TabsReordered keys           -> carry state { stateGames = inOrder }
+  TabsReordered keys           -> carry state { games = inOrder }
     where inOrder = mapMaybe (withId state) (Vector.toList keys)
 
 -- | The window carries on from here, with nothing to do.
@@ -183,28 +186,28 @@ stayAt session = Step session Nothing
 -- ends: the opponent was stopped, the answer it was in the middle of
 -- arrives as a failure, and there is no longer a game it is about.
 inTab :: State -> TabId -> (Session -> Step) -> Doing
-inTab state tab move = case lookup tab (stateGames state) of
+inTab state tab move = case lookup tab state.games of
   Nothing      -> carry state
-  Just session -> Carry state { stateGames = replaced } job
+  Just session -> Carry state { games = replaced } job
    where
     Step session' asked = move session
     replaced =
       [ (tab', if tab' == tab then session' else other)
-      | (tab', other) <- stateGames state
+      | (tab', other) <- state.games
       ]
     job = fmap (fmap (pure . InTab tab . Answered)) asked
 
 -- | Open a game on a board this wide, in a tab of its own.
 openTab :: State -> Int -> Doing
 openTab state n = Carry
-  state { stateGames   = stateGames state <> [(tab, starting human n)]
-        , stateShowing = Just tab
-        , stateNextTab = tab + 1
+  state { games   = state.games <> [(tab, starting human n)]
+        , showing = Just tab
+        , nextTab = tab + 1
         }
-  (Just (pure . TabOpened tab <$> openOpponent (stateOpponents state) n))
+  (Just (pure . TabOpened tab <$> state.opponents.open n))
  where
-  tab   = stateNextTab state
-  human = stateHuman state
+  tab   = state.nextTab
+  human = state.human
 
 -- | Close a tab, and let its opponent go.
 --
@@ -219,15 +222,15 @@ closeTab state key = case withId state key of
   Nothing             -> carry state
   Just (tab, session) -> case remaining of
     [] -> Close
-    _  -> Carry state { stateGames = remaining, stateShowing = showing' }
-                (release (stateOpponents state) session)
+    _  -> Carry state { games = remaining, showing = showing' }
+                (release state.opponents session)
    where
-    remaining = [ open | open <- stateGames state, fst open /= tab ]
+    remaining = [ open | open <- state.games, fst open /= tab ]
     -- Showing the tab that took the closed one's place, or the last
     -- one, which is what a tab bar does.
-    showing' = case stateShowing state of
+    showing' = case state.showing of
       Just showed | showed /= tab -> Just showed
-      _                           -> fst <$> nextAfter tab (stateGames state)
+      _                           -> fst <$> nextAfter tab state.games
 
 -- | Stop the opponent of a game whose tab has closed.
 --
@@ -235,12 +238,12 @@ closeTab state key = case withId state key of
 -- what stopping is for, and the answer it was about to give arrives at
 -- a tab that is no longer there, where it is dropped.
 release :: Opponents -> Session -> Maybe Job
-release opponents session = case sessionOpponent session of
+release opponents session = case session.opponent of
   Idle    engine -> Just (letGo engine)
   Waiting engine -> Just (letGo engine)
   Starting       -> Nothing
   Gone _         -> Nothing
-  where letGo engine = [] <$ closeOpponent opponents engine
+  where letGo engine = [] <$ opponents.close engine
 
 -- | The tab after this one, or the one before it when this is the
 -- last.
@@ -268,14 +271,14 @@ tabOf state key = fst <$> withId state key
 
 -- | The tab a key names, and the game in it.
 withId :: State -> Text -> Maybe (TabId, Session)
-withId state key = find ((== key) . keyOf . fst) (stateGames state)
+withId state key = find ((== key) . keyOf . fst) state.games
 
 -- | The tab the bars at the top and the bottom are about, and the game
 -- in it.
-showing :: State -> Maybe (TabId, Session)
-showing state = do
-  tab     <- stateShowing state
-  session <- lookup tab (stateGames state)
+shown :: State -> Maybe (TabId, Session)
+shown state = do
+  tab     <- state.showing
+  session <- lookup tab state.games
   pure (tab, session)
 
 -- * The window
@@ -309,7 +312,7 @@ view' state =
         []
         [ toolbarTop (header state)
         , toolbarTop (widget Adw.TabBar [tabBarView viewName])
-        , toolbarContent (games state)
+        , toolbarContent (gameTabs state)
         ]
 
 -- | The bar at the top: what the player does on the left and the
@@ -325,8 +328,8 @@ header state = container
   [ titleWidget
       (widget
         Adw.WindowTitle
-        [ #title := maybe "Stones" (statusOf . snd) (showing state)
-        , #subtitle := maybe "" (detailOf . snd) (showing state)
+        [ #title := maybe "Stones" (statusOf . snd) (shown state)
+        , #subtitle := maybe "" (detailOf . snd) (shown state)
         , classes ["numeric"]
         ]
       )
@@ -348,7 +351,7 @@ header state = container
 -- showing. A window with no game showing has the buttons, greyed.
 action
   :: State -> Text -> Text -> (Session -> Bool) -> SessionEvent -> Widget Event
-action state icon tip enabled event = case showing state of
+action state icon tip enabled event = case shown state of
   Nothing -> widget
     Gtk.Button
     [#iconName := icon, #tooltipText := tip, #sensitive := False]
@@ -381,25 +384,25 @@ mainMenu state = menuButton
     Nothing
     (Vector.fromList
       [ menuItem "Resign" (InTab tab ResignPressed)
-      | (tab, _) <- maybe [] pure (showing state)
+      | (tab, _) <- maybe [] pure (shown state)
       ]
     )
   ]
 
 -- | Where the game stands, which is the window's title.
 statusOf :: Session -> Text
-statusOf session = case sessionOpponent session of
+statusOf session = case session.opponent of
   Starting -> "Starting\8230"
   Gone _   -> "Stopped"
   _ | finished game    -> ending session
     | playable session -> "Your move"
     | otherwise        -> "Thinking\8230"
-  where game = sessionGame session
+  where game = session.game
 
 -- | How a game that is over ended.
 ending :: Session -> Text
-ending session = case winnerByResignation (sessionGame session) of
-  Just winner | winner == sessionHuman session -> "The engine resigned"
+ending session = case winnerByResignation session.game of
+  Just winner | winner == session.human -> "The engine resigned"
               | otherwise                      -> "You resigned"
   Nothing                                      -> "Game over"
 
@@ -410,9 +413,9 @@ ending session = case winnerByResignation (sessionGame session) of
 -- there: an engine that is gone, a score at the end, or a point the
 -- rules would not take a stone on.
 detailOf :: Session -> Text
-detailOf session = case sessionOpponent session of
+detailOf session = case session.opponent of
   Gone why -> why
-  _        -> case sessionNote session of
+  _        -> case session.note of
     Just (Result  out ) -> "Result: " <> out
     Just (Refused what) -> describeIllegal what
     Nothing             -> capturesOf session
@@ -422,21 +425,21 @@ capturesOf :: Session -> Text
 capturesOf session =
   size'
     <> "  \183  Black "
-    <> took blackCaptured
+    <> took Black
     <> "  \183  White "
-    <> took whiteCaptured
+    <> took White
  where
-  captures = gameCaptures (sessionGame session)
+  captures = session.game.captures
   size' = let n = Text.pack (show (sessionSize session)) in n <> "\215" <> n
-  took field = Text.pack (show (field captures))
+  took side = Text.pack (show (capturedBy side captures))
 
 -- | The games, one to a tab.
-games :: State -> Widget Event
-games state = tabView
+gameTabs :: State -> Widget Event
+gameTabs state = tabView
   [#name := viewName]
   defaultTabViewParams
-    { tabs        = Vector.fromList (map tabFor (stateGames state))
-    , selected    = keyOf <$> stateShowing state
+    { tabs        = Vector.fromList (map tabFor state.games)
+    , selected    = keyOf <$> state.showing
     , onSelected  = Just TabSelected
     , onClosePage = Just TabClosePressed
     , onReordered = Just TabsReordered
@@ -459,12 +462,12 @@ board tab session = toEvent <$> goban
   ]
   props
  where
-  game  = sessionGame session
+  game  = session.game
   props = GobanProps
-    { gobanBoard       = gameBoard game
-    , gobanLast        = gameLast game
-    , gobanHover       = sessionHuman session <$ ready session
-    , gobanCoordinates = True
+    { board       = game.board
+    , last        = game.last
+    , hover       = session.human <$ ready session
+    , coordinates = True
     }
   toEvent (GobanClicked coord) = InTab tab (Clicked coord)
 

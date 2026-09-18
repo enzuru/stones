@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
@@ -16,12 +18,15 @@ module FakeEngineTest
   )
 where
 
-import           Control.Exception              ( bracket_ )
+import           Control.Exception              ( bracket )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import           Hedgehog
 import           System.Directory
-import           System.FilePath                ( (</>) )
+import           System.IO                      ( hClose
+                                                , hPutStr
+                                                , openTempFile
+                                                )
 
 import           Go.Types
 import           Stones.Engine
@@ -30,19 +35,23 @@ import qualified Stones.Engine.GnuGo           as GnuGo
 -- | Write a shell script that behaves like an engine, and run
 -- something with the path to it.
 --
--- The name is the test's own, because the tests run alongside each
--- other and two of them writing one file would be two engines with one
--- script between them.
+-- The file is opened rather than named, because the tests run
+-- alongside each other and a name picked in advance is a name two of
+-- them can pick. The name given here is only so that a file left
+-- behind by a test that died says which test left it.
 withEngineNamed :: String -> String -> (FilePath -> IO a) -> IO a
 withEngineNamed name body use = do
   dir <- getTemporaryDirectory
-  let path = dir </> ("stones-fake-" <> name)
-  bracket_ (write path) (removeFile path) (use path)
+  bracket (write dir) removeFile use
  where
-  write path = do
-    writeFile path ("#!/bin/sh\n" <> body)
-    setPermissions path
-                   (setOwnerExecutable True (setOwnerReadable True emptyPermissions))
+  write dir = do
+    (path, handle) <- openTempFile dir ("stones-fake-" <> name <> "-.sh")
+    hPutStr handle ("#!/bin/sh\n" <> body)
+    hClose handle
+    setPermissions
+      path
+      (setOwnerExecutable True (setOwnerReadable True emptyPermissions))
+    pure path
 
 -- | An engine that plays D4 every time and counts the game as a win
 -- for Black.
@@ -92,15 +101,15 @@ prop_anObligingEngineCanBePlayedAgainst = withTests 1 . property $ do
     GnuGo.open path (GnuGo.Level 3) 9 >>= \case
       Left  why    -> pure (Left why)
       Right engine -> do
-        name    <- pure (engineName engine)
-        fresh   <- engineNewGame engine 13
-        told    <- engineNotify engine Black (Play (Coord 3 3))
-        passed  <- engineNotify engine White Pass
-        moved   <- engineGenMove engine White
-        nothing <- engineUndo engine 0
-        back    <- engineUndo engine 2
-        scored  <- engineScore engine
-        engineClose engine
+        name    <- pure engine.name
+        fresh   <- engine.newGame 13
+        told    <- engine.notify Black (Play (Coord 3 3))
+        passed  <- engine.notify White Pass
+        moved   <- engine.genMove White
+        nothing <- engine.undo 0
+        back    <- engine.undo 2
+        scored  <- engine.score
+        engine.close
         pure (Right (name, fresh, told, passed, moved, nothing, back, scored))
   case answers of
     Left why -> annotate (Text.unpack why) >> failure
@@ -121,8 +130,8 @@ prop_anEngineThatAnswersWithNonsenseIsReported = withTests 1 . property $ do
     GnuGo.open path (GnuGo.Level 1) 9 >>= \case
       Left  why    -> pure (Left why)
       Right engine -> do
-        moved <- engineGenMove engine White
-        engineClose engine
+        moved <- engine.genMove White
+        engine.close
         pure (Right moved)
   case answer of
     Right (Left why) ->
@@ -141,8 +150,8 @@ prop_anEngineThatGoesAwayMidGameIsReported = withTests 1 . property $ do
     GnuGo.open path (GnuGo.Level 1) 9 >>= \case
       Left  why    -> pure (Left why)
       Right engine -> do
-        moved <- engineGenMove engine Black
-        engineClose engine
+        moved <- engine.genMove Black
+        engine.close
         pure (Right moved)
   case answer of
     Right (Left why) -> assert (Text.isPrefixOf "Lost the engine" why)
@@ -154,17 +163,18 @@ prop_severalOpponentsAtOnceAndAllOfThemStopped = withTests 1 . property $ do
   -- running when the window closes is stopped with it.
   answers <- evalIO . withEngineNamed "several" obliging $ \path ->
     GnuGo.withGnuGo path (GnuGo.Level 1) $ \opponents -> do
-      one   <- openOpponent opponents 9
-      two   <- openOpponent opponents 13
-      three <- openOpponent opponents 19
+      one   <- opponents.open 9
+      two   <- opponents.open 13
+      three <- opponents.open 19
       -- One of them is let go by hand, the way a tab closing does it.
       case one of
-        Right engine -> closeOpponent opponents engine
+        Right engine -> opponents.close engine
         Left  _      -> pure ()
       pure (map named [one, two, three])
   answers === [Just "GNU Go", Just "GNU Go", Just "GNU Go"]
  where
-  named (Right engine) = Just (engineName engine)
+  named :: Either Text Engine -> Maybe Text
+  named (Right engine) = Just engine.name
   named (Left  _     ) = Nothing
 
 prop_theLevelsAreTheOnesGnuGoTakes :: Property

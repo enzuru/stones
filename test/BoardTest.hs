@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
@@ -28,7 +30,7 @@ setUp [] board = pure board
 setUp ((color, (x, y)) : rest) board =
   case place color (Coord x y) board of
     Left reason -> giveUp ("refused " <> show (color, x, y, reason))
-    Right placement -> setUp rest (placedBoard placement)
+    Right placement -> setUp rest placement.after
 
 prop_emptyBoardIsEmpty :: Property
 prop_emptyBoardIsEmpty = withTests 1 . property $ do
@@ -55,8 +57,8 @@ prop_capturesASurroundedStone = withTests 1 . property $ do
   case place Black (Coord 3 4) board of
     Left  reason    -> giveUp ("refused: " <> show reason)
     Right placement -> do
-      placedCaptured placement === Set.singleton (Coord 3 3)
-      stoneAt (placedBoard placement) (Coord 3 3) === Nothing
+      placement.captured === Set.singleton (Coord 3 3)
+      stoneAt placement.after (Coord 3 3) === Nothing
 
 prop_capturesAWholeGroup :: Property
 prop_capturesAWholeGroup = withTests 1 . property $ do
@@ -71,9 +73,9 @@ prop_capturesAWholeGroup = withTests 1 . property $ do
   case place Black (Coord 2 0) board of
     Left  reason    -> giveUp ("refused: " <> show reason)
     Right placement -> do
-      placedCaptured placement
+      placement.captured
         === Set.fromList [Coord 0 0, Coord 1 0]
-      stoneCount White (placedBoard placement) === 0
+      stoneCount White placement.after === 0
 
 prop_refusesSuicide :: Property
 prop_refusesSuicide = withTests 1 . property $ do
@@ -105,9 +107,9 @@ prop_allowsFillingWhenItCaptures = withTests 1 . property $ do
   case place Black (Coord 0 0) board of
     Left  reason    -> giveUp ("refused: " <> show reason)
     Right placement -> do
-      placedCaptured placement === Set.fromList [Coord 1 0, Coord 0 1]
-      stoneAt (placedBoard placement) (Coord 0 0) === Just Black
-      stoneCount White (placedBoard placement) === 0
+      placement.captured === Set.fromList [Coord 1 0, Coord 0 1]
+      stoneAt placement.after (Coord 0 0) === Just Black
+      stoneCount White placement.after === 0
 
 prop_refusesOccupiedAndOffBoard :: Property
 prop_refusesOccupiedAndOffBoard = withTests 1 . property $ do

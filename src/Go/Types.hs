@@ -1,6 +1,9 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -37,8 +40,8 @@ opposite White = Black
 -- @Coord 0 0@ is the point the drawing code puts first. Both numbers
 -- run from zero to one less than the board size.
 data Coord = Coord
-  { coordX :: !Int
-  , coordY :: !Int
+  { x :: !Int
+  , y :: !Int
   }
   deriving (Eq, Ord, Show)
 
@@ -51,9 +54,9 @@ data Move
 
 -- | How many stones each player has taken off the board.
 data Captures = Captures
-  { blackCaptured :: !Int
+  { black :: !Int
     -- ^ White stones that Black has taken.
-  , whiteCaptured :: !Int
+  , white :: !Int
     -- ^ Black stones that White has taken.
   }
   deriving (Eq, Show)
@@ -94,13 +97,13 @@ noCaptures = Captures 0 0
 
 -- | The number of stones this player has taken.
 capturedBy :: Color -> Captures -> Int
-capturedBy Black = blackCaptured
-capturedBy White = whiteCaptured
+capturedBy Black = (.black)
+capturedBy White = (.white)
 
 -- | Add stones to this player's total.
 addCapture :: Color -> Int -> Captures -> Captures
 addCapture _     0 captures = captures
 addCapture Black n captures =
-  captures { blackCaptured = blackCaptured captures + n }
+  captures { black = captures.black + n }
 addCapture White n captures =
-  captures { whiteCaptured = whiteCaptured captures + n }
+  captures { white = captures.white + n }

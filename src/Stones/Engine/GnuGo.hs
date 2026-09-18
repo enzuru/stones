@@ -1,6 +1,9 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -65,13 +68,13 @@ open program (Level level) initialSize = do
       )
     Right gtp -> do
       current <- newIORef initialSize
-      let engine = Engine { engineName    = "GNU Go"
-                          , engineNewGame = newGame gtp current
-                          , engineNotify  = notify gtp current
-                          , engineGenMove = genMove gtp current
-                          , engineUndo    = undo gtp
-                          , engineScore   = score gtp
-                          , engineClose   = Gtp.stop gtp
+      let engine = Engine { name    = "GNU Go"
+                          , newGame = newGame gtp current
+                          , notify  = notify gtp current
+                          , genMove = genMove gtp current
+                          , undo    = undo gtp
+                          , score   = score gtp
+                          , close   = Gtp.stop gtp
                           }
       setUp <- newGame gtp current initialSize
       pure $ case setUp of
@@ -152,7 +155,7 @@ colorName White = "white"
 probe :: FilePath -> Level -> IO (Either Text ())
 probe program level = open program level 9 >>= \case
   Left  why    -> pure (Left why)
-  Right engine -> Right () <$ engineClose engine
+  Right engine -> Right () <$ engine.close
 
 -- | Opponents that are GNU Go processes, for as long as this action
 -- runs.
@@ -163,14 +166,13 @@ probe program level = open program level 9 >>= \case
 -- never left behind and never waited on twice.
 withGnuGo :: FilePath -> Level -> (Opponents -> IO a) -> IO a
 withGnuGo program level use = bracket (newIORef []) stopEveryone $ \running ->
-  use Opponents { openOpponent  = openOne running
-                , closeOpponent = engineClose
-                }
+  use Opponents { open = openOne running, close = (.close) }
  where
   openOne running n = open program level n >>= \case
     Left  why    -> pure (Left why)
     Right engine -> Right engine <$ modifyIORef' running (engine :)
 
+  stopEveryone :: IORef [Engine] -> IO ()
   stopEveryone running = do
     started <- readIORef running
-    for_ started engineClose
+    for_ started (.close)

@@ -1,6 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Starting the program.
@@ -38,10 +40,10 @@ import qualified Stones.Engine.GnuGo           as GnuGo
 
 -- | What the command line asked for.
 data Options = Options
-  { optionSize    :: Int
-  , optionColor   :: Color
-  , optionLevel   :: GnuGo.Level
-  , optionProgram :: FilePath
+  { size    :: Int
+  , color   :: Color
+  , level   :: GnuGo.Level
+  , program :: FilePath
   }
 
 -- | The command line, as a parser of it.
@@ -116,11 +118,11 @@ main = do
   -- engine that is not there would show up as a tab that never starts.
   -- Trying one here turns that into a line on the terminal and an exit
   -- code.
-  working <- GnuGo.probe (optionProgram chosen) (optionLevel chosen)
+  working <- GnuGo.probe chosen.program chosen.level
   case working of
     Left problem -> Text.putStrLn problem >> exitFailure
     Right () ->
-      GnuGo.withGnuGo (optionProgram chosen) (optionLevel chosen)
+      GnuGo.withGnuGo chosen.program chosen.level
         $ \opponents -> do
             application <- Adw.applicationNew (Just identifier)
                                               [Gio.ApplicationFlagsDefaultFlags]
@@ -129,8 +131,8 @@ main = do
               void $ startInApplication
                 application
                 (Stones.application opponents
-                                    (optionColor chosen)
-                                    (optionSize chosen)
+                                    chosen.color
+                                    chosen.size
                 )
             void (Gio.applicationRun application Nothing)
 

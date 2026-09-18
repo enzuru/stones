@@ -1,6 +1,9 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE NoFieldSelectors      #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -58,12 +61,12 @@ data Opponent
 
 -- | One game of a window.
 data Session = Session
-  { sessionGame     :: Game
+  { game     :: Game
     -- ^ The position, and whose turn it is.
-  , sessionOpponent :: Opponent
-  , sessionHuman    :: Color
+  , opponent :: Opponent
+  , human    :: Color
     -- ^ The colour the player at this window has in this game.
-  , sessionNote     :: Maybe Note
+  , note     :: Maybe Note
     -- ^ Something to say about this game, if there is anything.
   }
 
@@ -108,17 +111,17 @@ data Reply
 -- module stays a function of its arguments and the window decides when
 -- and where it runs.
 data Step = Step
-  { stepSession :: Session
-  , stepAsk     :: Maybe (IO Reply)
+  { session :: Session
+  , ask     :: Maybe (IO Reply)
   }
 
 -- | A game on a board this wide, waiting for an opponent to be
 -- started for it.
 starting :: Color -> Int -> Session
-starting human n = Session { sessionGame     = newGame n
-                           , sessionOpponent = Starting
-                           , sessionHuman    = human
-                           , sessionNote     = Nothing
+starting human n = Session { game     = newGame n
+                           , opponent = Starting
+                           , human    = human
+                           , note     = Nothing
                            }
 
 -- | The opponent this game was waiting for has started.
@@ -127,28 +130,28 @@ starting human n = Session { sessionGame     = newGame n
 -- thing that happens to this game is a question rather than a click.
 opened :: Engine -> Session -> Step
 opened engine session
-  | gameTurn game == sessionHuman session = stay
-    session { sessionOpponent = Idle engine }
+  | game.turn == session.human = stay
+    session { opponent = Idle engine }
   | otherwise = asking
     session
     engine
-    (either Failed Moved <$> engineGenMove engine (gameTurn game))
-  where game = sessionGame session
+    (either Failed Moved <$> engine.genMove game.turn)
+  where game = session.game
 
 -- | No opponent could be started for this game.
 couldNotOpen :: Text -> Session -> Session
-couldNotOpen why session = session { sessionOpponent = Gone why }
+couldNotOpen why session = session { opponent = Gone why }
 
 -- | The width of the board this game is played on.
 sessionSize :: Session -> Int
-sessionSize = boardSize . sessionGame
+sessionSize session = boardSize session.game
 
 -- | What to call this game's opponent.
 opponentOf :: Session -> Text
-opponentOf session = case sessionOpponent session of
+opponentOf session = case session.opponent of
   Starting  -> "starting"
-  Idle    e -> engineName e
-  Waiting e -> engineName e
+  Idle    e -> e.name
+  Waiting e -> e.name
   Gone    _ -> "no engine"
 
 -- | The opponent to send a move to, if the player can move right now.
@@ -157,11 +160,11 @@ opponentOf session = case sessionOpponent session of
 -- lets the moves below be written without a branch for the case where
 -- the player may move and there is nothing to move against.
 ready :: Session -> Maybe Engine
-ready session = case sessionOpponent session of
+ready session = case session.opponent of
   Idle engine
-    | not (finished game), gameTurn game == sessionHuman session -> Just engine
+    | not (finished game), game.turn == session.human -> Just engine
   _ -> Nothing
-  where game = sessionGame session
+  where game = session.game
 
 -- | Can the player move in this game? This is 'ready' with the
 -- opponent left out, for the window, which only wants to know whether
@@ -172,8 +175,8 @@ playable = isJust . ready
 -- | Is there anything to take back, and is the opponent free to be
 -- told about it?
 canUndo :: Session -> Bool
-canUndo session = case sessionOpponent session of
-  Idle _ -> isJust (rewind (sessionHuman session) (sessionGame session))
+canUndo session = case session.opponent of
+  Idle _ -> isJust (rewind session.human session.game)
   _      -> False
 
 -- * Stepping
@@ -199,23 +202,23 @@ stay session = Step session Nothing
 -- which is not a game anybody is being asked to move in.
 asking :: Session -> Engine -> IO Reply -> Step
 asking session engine job = Step
-  session { sessionOpponent = Waiting engine, sessionNote = Nothing }
+  session { opponent = Waiting engine, note = Nothing }
   (Just job)
 
 -- | The player's own move.
 humanMove :: Session -> Move -> Step
 humanMove session move = case ready session of
   Nothing     -> stay session
-  Just engine -> case playMove human move (sessionGame session) of
-    Left reason -> stay session { sessionNote = Just (Refused reason) }
+  Just engine -> case playMove human move session.game of
+    Left reason -> stay session { note = Just (Refused reason) }
     Right game
-      | finished game -> asking session { sessionGame = game }
+      | finished game -> asking session { game = game }
                                 engine
                                 (tellThenScore engine human move)
-      | otherwise -> asking session { sessionGame = game }
+      | otherwise -> asking session { game = game }
                             engine
                             (tellThenMove engine human move)
-  where human = sessionHuman session
+  where human = session.human
 
 -- | Giving the game up, which ends it where it stands.
 --
@@ -224,13 +227,13 @@ humanMove session move = case ready session of
 resign :: Session -> Step
 resign session = case ready session of
   Nothing     -> stay session
-  Just engine -> case playMove human Resign (sessionGame session) of
+  Just engine -> case playMove human Resign session.game of
     Left  _    -> stay session
-    Right game -> stay session { sessionGame     = game
-                               , sessionOpponent = Idle engine
-                               , sessionNote     = Nothing
+    Right game -> stay session { game     = game
+                               , opponent = Idle engine
+                               , note     = Nothing
                                }
-  where human = sessionHuman session
+  where human = session.human
 
 -- | Take back moves until it is the player's turn again, on this
 -- board and on the opponent's.
@@ -240,52 +243,52 @@ resign session = case ready session of
 -- to answer it again. Two is the usual number, and one is what is
 -- there to take back when the opponent opened the game.
 takeBack :: Session -> Step
-takeBack session = case sessionOpponent session of
-  Idle engine -> case rewind human (sessionGame session) of
+takeBack session = case session.opponent of
+  Idle engine -> case rewind human session.game of
     Nothing            -> stay session
-    Just (count, game) -> asking session { sessionGame = game }
+    Just (count, game) -> asking session { game = game }
                                  engine
-                                 (undoThen engine count (gameTurn game) human)
+                                 (undoThen engine count game.turn human)
   _ -> stay session
-  where human = sessionHuman session
+  where human = session.human
 
 -- | What the opponent answered.
 answered :: Session -> Reply -> Step
-answered session reply = case sessionOpponent session of
+answered session reply = case session.opponent of
   -- An answer with nobody waiting for it belongs to a game that has
   -- moved on since the question, so there is nothing to do with it.
   Waiting engine -> case reply of
     Moved move -> opponentMove session engine move
     Ready      -> stay (freed engine session)
-    Scored out -> stay (freed engine session) { sessionNote = Just (Result out) }
-    Failed why -> stay session { sessionOpponent = Gone why }
+    Scored out -> stay (freed engine session) { note = Just (Result out) }
+    Failed why -> stay session { opponent = Gone why }
   _ -> stay session
 
 -- | The opponent has answered and is free again.
 freed :: Engine -> Session -> Session
-freed engine session = session { sessionOpponent = Idle engine }
+freed engine session = session { opponent = Idle engine }
 
 -- | The opponent's move, which is played on this board too.
 opponentMove :: Session -> Engine -> Move -> Step
 opponentMove session engine move = case move of
-  Resign -> stay (freed engine session { sessionGame = resigned })
-  _      -> case playMove them move (sessionGame session) of
+  Resign -> stay (freed engine session { game = resigned })
+  _      -> case playMove them move session.game of
     -- The opponent has answered with something this program's rules do
     -- not allow, which means the two boards have drifted apart. Saying
     -- so is the only honest thing left to do.
-    Left reason -> stay session { sessionOpponent = Gone (disagreement reason) }
+    Left reason -> stay session { opponent = Gone (disagreement reason) }
     Right game
-      | finished game -> asking session { sessionGame = game }
+      | finished game -> asking session { game = game }
                                 engine
                                 (askScore engine)
-      | otherwise     -> stay (freed engine session { sessionGame = game })
+      | otherwise     -> stay (freed engine session { game = game })
  where
-  them = opposite (sessionHuman session)
+  them = opposite session.human
   disagreement reason =
     "The engine and the board disagree: " <> describeIllegal reason
-  resigned = case playMove them Resign (sessionGame session) of
+  resigned = case playMove them Resign session.game of
     Right game -> game
-    Left  _    -> sessionGame session
+    Left  _    -> session.game
 
 -- | How far back to go, and where that lands, taking at most two moves
 -- off.
@@ -293,7 +296,7 @@ rewind :: Color -> Game -> Maybe (Int, Game)
 rewind human = go 0
  where
   go taken game
-    | taken > 0 && gameTurn game == human = Just (taken, game)
+    | taken > 0 && game.turn == human = Just (taken, game)
     | taken >= 2 = Just (taken, game)
     | otherwise = case undoMove game of
       Nothing     -> if taken > 0 then Just (taken, game) else Nothing
@@ -304,26 +307,26 @@ rewind human = go 0
 
 -- | Tell it what was played, then ask it for its own move.
 tellThenMove :: Engine -> Color -> Move -> IO Reply
-tellThenMove engine human move = engineNotify engine human move >>= \case
+tellThenMove engine human move = engine.notify human move >>= \case
   Left  why -> pure (Failed why)
-  Right ()  -> either Failed Moved <$> engineGenMove engine (opposite human)
+  Right ()  -> either Failed Moved <$> engine.genMove (opposite human)
 
 -- | Tell it what was played, then ask it what the score is. This is
 -- the second pass of a game that has just ended.
 tellThenScore :: Engine -> Color -> Move -> IO Reply
-tellThenScore engine human move = engineNotify engine human move >>= \case
+tellThenScore engine human move = engine.notify human move >>= \case
   Left  why -> pure (Failed why)
   Right ()  -> askScore engine
 
 -- | Ask it what the score is.
 askScore :: Engine -> IO Reply
-askScore engine = either Failed Scored <$> engineScore engine
+askScore engine = either Failed Scored <$> engine.score
 
 -- | Take it back this many moves, and ask it to move if the board it
 -- is left with is one where it has the turn.
 undoThen :: Engine -> Int -> Color -> Color -> IO Reply
-undoThen engine count turn human = engineUndo engine count >>= \case
+undoThen engine count turn human = engine.undo count >>= \case
   Left why -> pure (Failed why)
   Right ()
     | turn == human -> pure Ready
-    | otherwise     -> either Failed Moved <$> engineGenMove engine turn
+    | otherwise     -> either Failed Moved <$> engine.genMove turn
