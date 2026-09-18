@@ -77,9 +77,13 @@ Stones.App            The tabs, the window, and where each answer belongs.
 ```
 
 The tests are in `test/`. The rules and the geometry are checked as pure
-functions, `Stones.App` is driven as a state machine with a fake engine
-in place of a real one, and one test starts a real GNU Go and talks to
-it. None of them need a display.
+functions, `Stones.Session` and `Stones.App` are driven as state
+machines with a fake engine in place of a real one, and one test starts
+a real GNU Go and talks to it. None of them need a display.
+
+`make coverage` says what they reach. It builds the test program a
+second time with GHC's own coverage counting, so it is not part of
+`make check`.
 
 The program keeps the rules itself and also tells the engine about every
 move, so both hold the same position. Two boards rather than one is what
