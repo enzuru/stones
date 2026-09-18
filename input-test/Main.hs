@@ -46,6 +46,7 @@ import           Go.Vertex                      ( toVertex )
 import           Stones.App
 import           Stones.Engine
 import           Stones.Session
+import           Stones.Setup
 
 -- | An opponent that passes whatever it is asked, so that the board
 -- comes back to the player after every move.
@@ -60,7 +61,7 @@ passer = Engine { name    = "passer"
                 }
 
 source :: Opponents
-source = Opponents { open  = \_ -> pure (Right passer)
+source = Opponents { open  = \_ _ -> pure (Right passer)
                    , close = \_ -> pure ()
                    }
 
@@ -70,8 +71,8 @@ source = Opponents { open  = \_ -> pure (Right passer)
 -- passes and a pass is not a point: the last move would go back to
 -- nothing as soon as it answered.
 stones :: State -> Text
-stones state = case state.games of
-  ((_, session) : _)
+stones state = case state.openTabs of
+  ((_, Playing session) : _)
     | null named -> "-"
     | otherwise  -> Text.unwords named
    where
@@ -79,7 +80,8 @@ stones state = case state.games of
     named = mapMaybe
       (toVertex (sessionSize session))
       [ point | point <- coords board, stoneAt board point == Just Black ]
-  [] -> "-"
+  -- A tab still on its page, or no tab at all, has no stones on it.
+  _ -> "-"
 
 main :: IO ()
 main = do
@@ -88,9 +90,12 @@ main = do
   -- rather than gtk_init: the style manager the board reads is one of
   -- the things it puts in place.
   Adw.init
-  let window = application source Black 9
+  let window = application source Setup { size     = 9
+                                        , human    = Black
+                                        , strength = Gentle
+                                        }
   void (run window { update = reporting
-                   , inputs = inputs window <> [quitWhenTold]
+                   , inputs = inputs window <> [past, quitWhenTold]
                    })
  where
   reporting state event = case update' state event of
@@ -100,6 +105,15 @@ main = do
     Text.putStrLn ("BOARD " <> there)
     hFlush stdout
     pure Nothing
+
+-- | Press the button on the page the first tab opens on.
+--
+-- A tab opens on the page that asks what to play, and this test is
+-- about clicking the board rather than about that page. The page is
+-- driven from here so that the clicking below lands on a board, and it
+-- goes through the same event the button sends.
+past :: Producer Event IO ()
+past = Pipes.yield (InSetup 1 StartPressed)
 
 -- | Wait for a line on the standard input, and close the window when
 -- one arrives or when there is no more input coming.

@@ -20,7 +20,9 @@ import           Control.Monad                  ( void
                                                 , when
                                                 )
 import           Data.Foldable                  ( for_ )
+import qualified Data.List                     as List
 import           Data.Text                      ( Text )
+import qualified Data.Text                     as Text
 import qualified Data.Text.IO                  as Text
 import           Options.Applicative
 import           System.Directory               ( doesDirectoryExist )
@@ -36,13 +38,23 @@ import           GI.Gtk.Declarative.App.Simple  ( startInApplication )
 
 import           Go.Types
 import qualified Stones.App                    as Stones
+import           Stones.Engine                  ( Strength
+                                                , describeStrength
+                                                , strengths
+                                                )
+import           Stones.Setup                   ( Setup(..)
+                                                , defaultSetup
+                                                )
 import qualified Stones.Engine.GnuGo           as GnuGo
 
 -- | What the command line asked for.
+--
+-- Everything but the program is what the page a tab opens on starts
+-- out asking for. The command line does not start a game any more. It
+-- says what the first page should already have chosen, for somebody
+-- who plays the same game every time.
 data Options = Options
-  { size    :: Int
-  , color   :: Color
-  , level   :: GnuGo.Level
+  { opening :: Setup
   , program :: FilePath
   }
 
@@ -50,30 +62,30 @@ data Options = Options
 options :: Parser Options
 options =
   Options
-    <$> option
-          (within 2 19 "a board width")
-          (  long "size"
-          <> metavar "N"
-          <> value 19
-          <> showDefault
-          <> help "Board width, from 2 to 19"
-          )
-    <*> (   flag'
-            White
-            (long "white" <> help "Play White, so the engine opens the game")
-        <|> flag' Black (long "black" <> help "Play Black, which moves first")
-        <|> pure Black
+    <$> (   Setup
+        <$> option
+              (within 2 19 "a board width")
+              (  long "size"
+              <> metavar "N"
+              <> value defaultSetup.size
+              <> showDefault
+              <> help "Board width on the first page, from 2 to 19"
+              )
+        <*> (   flag'
+                White
+                (long "white" <> help "Play White, so the engine opens the game")
+            <|> flag' Black (long "black" <> help "Play Black, which moves first")
+            <|> pure defaultSetup.human
+            )
+        <*> option
+              strength
+              (  long "strength"
+              <> metavar "NAME"
+              <> value defaultSetup.strength
+              <> showDefaultWith (Text.unpack . describeStrength)
+              <> help ("How hard the engine tries: " <> names)
+              )
         )
-    <*> option
-          (GnuGo.Level <$> within (fst GnuGo.levelRange)
-                                  (snd GnuGo.levelRange)
-                                  "a level")
-          (  long "level"
-          <> metavar "N"
-          <> value GnuGo.defaultLevel
-          <> showDefaultWith (\(GnuGo.Level n) -> show n)
-          <> help "How hard GNU Go thinks, from 1 to 10"
-          )
     <*> strOption
           (  long "engine"
           <> metavar "PATH"
@@ -81,6 +93,20 @@ options =
           <> showDefault
           <> help "The GNU Go program to run"
           )
+  where names = List.intercalate ", " (map (Text.unpack . describeStrength) strengths)
+
+-- | A strength by name, in any case, because a command line is typed.
+strength :: ReadM Strength
+strength = do
+  given <- str
+  case [ which | which <- strengths, matches which given ] of
+    which : _ -> pure which
+    []        -> readerError ("there is no strength called " <> given)
+  where matches which given = lower (describeStrength which) == lower (Text.pack given)
+
+-- | A word with nothing to tell apart but its letters.
+lower :: Text -> Text
+lower = Text.toLower
 
 -- | A number that has to be between two others, and what to say to
 -- somebody who gave one that is not.
@@ -107,34 +133,31 @@ description = info
   (  fullDesc
   <> header "stones - play Go against GNU Go"
   <> progDesc
-       "Opens a board. Click a point to play there. New Game opens \
-       \another board in a tab of its own."
+       "Opens a page that asks what to play. Click a point on the \
+       \board to play there. New Game opens another page in a tab of \
+       \its own."
   )
 
 main :: IO ()
 main = do
   chosen <- execParser description
-  -- The window opens its first game a moment after it appears, so an
-  -- engine that is not there would show up as a tab that never starts.
-  -- Trying one here turns that into a line on the terminal and an exit
-  -- code.
-  working <- GnuGo.probe chosen.program chosen.level
+  -- Nothing starts an engine until somebody presses the button on the
+  -- page a tab opens on, so an engine that is not there would show up
+  -- as a game that never starts, a long way from here. Trying one now
+  -- turns that into a line on the terminal and an exit code.
+  working <- GnuGo.probe chosen.program GnuGo.defaultLevel
   case working of
     Left problem -> Text.putStrLn problem >> exitFailure
     Right () ->
-      GnuGo.withGnuGo chosen.program chosen.level
-        $ \opponents -> do
-            application <- Adw.applicationNew (Just identifier)
-                                              [Gio.ApplicationFlagsDefaultFlags]
-            _ <- Gio.onApplicationActivate application $ do
-              useOwnIcon
-              void $ startInApplication
-                application
-                (Stones.application opponents
-                                    chosen.color
-                                    chosen.size
-                )
-            void (Gio.applicationRun application Nothing)
+      GnuGo.withGnuGo chosen.program $ \opponents -> do
+        application <- Adw.applicationNew (Just identifier)
+                                          [Gio.ApplicationFlagsDefaultFlags]
+        _ <- Gio.onApplicationActivate application $ do
+          useOwnIcon
+          void $ startInApplication
+            application
+            (Stones.application opponents chosen.opening)
+        void (Gio.applicationRun application Nothing)
 
 -- | The name the desktop knows this program by, which is the name of
 -- its icon and of the file that describes it.
