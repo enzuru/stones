@@ -60,7 +60,7 @@ run = findExecutable "gnugo" >>= \found -> case found of
             Right Resign -> Left "it resigned on an empty board"
             Right (Play coord)
               | coord == Coord 3 3 -> Left "it played on top of a stone"
-              | otherwise -> case fromVertex 9 (toVertex 9 coord) of
+              | otherwise -> case fromVertex 9 =<< toVertex 9 coord of
                 Just same | same == coord -> Right ()
                 _ -> Left "its move is not a point on a 9x9 board"
         check "taking a move back" (engineUndo engine 1)

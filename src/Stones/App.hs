@@ -21,6 +21,7 @@ module Stones.App
   , TabId
   , startingState
   , Doing(..)
+  , Job
   , decide
   , update'
   , view'
@@ -57,6 +58,8 @@ import           GI.Gtk.Declarative.Adwaita.ToolbarView
                                                 , toolbarTop
                                                 )
 import           GI.Gtk.Declarative.App.Simple
+import           Data.Foldable                  ( traverse_ )
+import           Pipes                          ( lift )
 import qualified Pipes
 
 import           Go.Game
@@ -124,10 +127,14 @@ startingState opponents human = State { stateGames     = []
 -- this with the action handed to the application to run, which is the
 -- only part that needs an application to be running.
 data Doing
-  = Carry State (Maybe (IO (Maybe Event)))
+  = Carry State (Maybe Job)
     -- ^ The window carries on from here, and this is what to do.
   | Close
     -- ^ The window ends.
+
+-- | Something for the window to have done, and the events it answers
+-- with. Letting an opponent go is the one that answers with none.
+type Job = IO [Event]
 
 update' :: State -> Event -> Transition State Event
 update' state event = case decide state event of
@@ -136,7 +143,11 @@ update' state event = case decide state event of
   -- command is several lines of protocol, and a job stopped between
   -- two of them would leave the answer to the first sitting in the
   -- pipe, to be read as the answer to whatever was asked next.
-  Carry state' job -> Transition state' (maybe none perform job)
+  Carry state' job -> Transition state' (maybe none doing job)
+
+-- | Run a job, and hand the loop whatever it answered with.
+doing :: Job -> Cmd Event
+doing job = stream (lift job >>= traverse_ Pipes.yield)
 
 -- | What one event does to the window.
 decide :: State -> Event -> Doing
@@ -181,7 +192,7 @@ inTab state tab move = case lookup tab (stateGames state) of
       [ (tab', if tab' == tab then session' else other)
       | (tab', other) <- stateGames state
       ]
-    job = fmap (fmap (Just . InTab tab . Answered)) asked
+    job = fmap (fmap (pure . InTab tab . Answered)) asked
 
 -- | Open a game on a board this wide, in a tab of its own.
 openTab :: State -> Int -> Doing
@@ -190,7 +201,7 @@ openTab state n = Carry
         , stateShowing = Just tab
         , stateNextTab = tab + 1
         }
-  (Just (Just . TabOpened tab <$> openOpponent (stateOpponents state) n))
+  (Just (pure . TabOpened tab <$> openOpponent (stateOpponents state) n))
  where
   tab   = stateNextTab state
   human = stateHuman state
@@ -223,13 +234,13 @@ closeTab state key = case withId state key of
 -- An opponent that is thinking is stopped in the middle of it. That is
 -- what stopping is for, and the answer it was about to give arrives at
 -- a tab that is no longer there, where it is dropped.
-release :: Opponents -> Session -> Maybe (IO (Maybe Event))
+release :: Opponents -> Session -> Maybe Job
 release opponents session = case sessionOpponent session of
   Idle    engine -> Just (letGo engine)
   Waiting engine -> Just (letGo engine)
   Starting       -> Nothing
   Gone _         -> Nothing
-  where letGo engine = Nothing <$ closeOpponent opponents engine
+  where letGo engine = [] <$ closeOpponent opponents engine
 
 -- | The tab after this one, or the one before it when this is the
 -- last.

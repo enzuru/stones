@@ -73,6 +73,7 @@ executable stones
                     , gi-gio
                     , gi-gtk
                     , gi-gtk4-declarative-app-simple
+                    , optparse-applicative            >=0.17 && <0.20
                     , stones
                     , text
   ghc-options:        -threaded -O2

@@ -28,7 +28,7 @@
         data-default-class unordered-containers
         async stm safe-exceptions
         pipes pipes-concurrency pipes-extras
-        process
+        process optparse-applicative
         haskell-gi haskell-gi-base haskell-gi-overloading
         gi-glib gi-gobject gi-gio gi-gdk gi-gtk gi-gsk gi-pango
         gi-cairo gi-cairo-render gi-cairo-connector

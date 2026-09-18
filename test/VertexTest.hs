@@ -28,7 +28,7 @@ pointOn = do
 prop_aNameReadsBackAsThePointItNames :: Property
 prop_aNameReadsBackAsThePointItNames = property $ do
   (n, coord) <- forAll pointOn
-  fromVertex n (toVertex n coord) === Just coord
+  (fromVertex n =<< toVertex n coord) === Just coord
 
 prop_theColumnsSkipTheLetterI :: Property
 prop_theColumnsSkipTheLetterI = withTests 1 . property $ do
@@ -39,9 +39,9 @@ prop_theCornersAreWhereTheProtocolSaysTheyAre :: Property
 prop_theCornersAreWhereTheProtocolSaysTheyAre = withTests 1 . property $ do
   -- A1 is the bottom left, which is the last row of a board drawn from
   -- the top, and T19 is the top right of a 19x19 board.
-  toVertex 19 (Coord 0 18) === "A1"
-  toVertex 19 (Coord 18 0) === "T19"
-  toVertex 19 (Coord 3 15) === "D4"
+  toVertex 19 (Coord 0 18) === Just "A1"
+  toVertex 19 (Coord 18 0) === Just "T19"
+  toVertex 19 (Coord 3 15) === Just "D4"
   fromVertex 19 "D4" === Just (Coord 3 15)
   fromVertex 19 "Q16" === Just (Coord 15 3)
 
@@ -63,6 +63,27 @@ prop_refusesANameThatIsNotAPoint = withTests 1 . property $ do
   fromVertex 9 "A0" === Nothing
   fromVertex 9 "" === Nothing
   fromVertex 9 "pass" === Nothing
+
+prop_aPointThatIsNotOnTheBoardHasNoName :: Property
+prop_aPointThatIsNotOnTheBoardHasNoName = withTests 1 . property $ do
+  -- A name and a point on a board of a given width are two ways of
+  -- saying the same thing, and either way round there are values on
+  -- one side with nothing on the other.
+  toVertex 9 (Coord 9 0) === Nothing
+  toVertex 9 (Coord 0 9) === Nothing
+  toVertex 9 (Coord (-1) 0) === Nothing
+  toVertex 9 (Coord 0 (-1)) === Nothing
+  moveToVertex 9 (Play (Coord 9 9)) === Nothing
+  moveToVertex 9 Pass === Just "pass"
+  moveToVertex 9 Resign === Just "pass"
+  moveToVertex 9 (Play (Coord 5 4)) === Just "F5"
+
+prop_aColumnHasALetterWhenThereIsAColumn :: Property
+prop_aColumnHasALetterWhenThereIsAColumn = withTests 1 . property $ do
+  columnLetter 9 0 === Just 'A'
+  columnLetter 9 8 === Just 'J'
+  columnLetter 9 9 === Nothing
+  columnLetter 9 (-1) === Nothing
 
 tests :: Group
 tests = $$(discover)

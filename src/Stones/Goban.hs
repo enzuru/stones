@@ -360,17 +360,19 @@ drawStars Palette { lineInk = (r, g, b) } geo = do
 -- left, which is where a player reading a game record looks.
 drawLabels :: Palette -> Geometry -> Cairo.Render ()
 drawLabels Palette { labelInk = (r, g, b) } geo = do
-  let n = geoSize geo
   Cairo.setSourceRGB r g b
   Cairo.selectFontFace ("Cantarell" :: Text)
                        Cairo.FontSlantNormal
                        Cairo.FontWeightNormal
   Cairo.setFontSize (geoMargin geo * 0.72)
-  mapM_ (column n) [0 .. n - 1]
-  mapM_ (row n)    [0 .. n - 1]
+  -- Over the letters themselves rather than over the numbers of the
+  -- columns, so that there is no counting to get wrong.
+  mapM_ column (zip [0 ..] (columnLetters n))
+  mapM_ row    [0 .. n - 1]
  where
-  column n i = centred (columnLabelAt geo i) (Text.singleton (columnLetters n !! i))
-  row n i = centred (rowLabelAt geo i) (Text.pack (show (n - i)))
+  n = geoSize geo
+  column (i, letter) = centred (columnLabelAt geo i) (Text.singleton letter)
+  row i = centred (rowLabelAt geo i) (Text.pack (show (n - i)))
 
   -- Cairo puts text where the baseline starts, and a label wants to be
   -- middled on the line it belongs to, so the extents say how far to

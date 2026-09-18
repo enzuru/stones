@@ -138,12 +138,21 @@ place color coord board
     , not (hasLiberty placed dead)
     ]
 
-  cleared = foldl' (flip (set Nothing)) placed (Set.toList captured)
+  -- All of the dead come off in one go. A board is a vector, and
+  -- writing to one copies it, so taking a group of stones off one at a
+  -- time would copy the board once per stone.
+  cleared = setAll [ (dead, Nothing) | dead <- Set.toList captured ] placed
 
--- | Write a point, which is the one place the vector is touched.
+-- | Write one point.
 set :: Maybe Color -> Coord -> Board -> Board
-set value coord board =
-  board { points = points board Vector.// [(index board coord, value)] }
+set value coord = setAll [(coord, value)]
+
+-- | Write these points, which is the one place the vector is touched.
+setAll :: [(Coord, Maybe Color)] -> Board -> Board
+setAll [] board = board
+setAll written board = board
+  { points = points board Vector.// [ (index board at, what) | (at, what) <- written ]
+  }
 
 -- | How many stones of this colour are on the board.
 stoneCount :: Color -> Board -> Int

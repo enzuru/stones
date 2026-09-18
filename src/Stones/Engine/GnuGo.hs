@@ -97,11 +97,22 @@ newGame gtp current n = do
 notify :: Gtp.Gtp -> IORef Int -> Color -> Move -> IO (Either Text ())
 notify gtp current color move = do
   n <- readIORef current
-  report
-    (Gtp.command_
-      gtp
-      ("play " <> colorName color <> " " <> moveToVertex n move)
-    )
+  case moveToVertex n move of
+    -- The board this program is playing on and the board the engine is
+    -- playing on have come apart, because a move was made on a point
+    -- that does not exist on the board the engine was last given.
+    Nothing ->
+      pure
+        (Left
+          (  "That move is not on the "
+          <> Text.pack (show n)
+          <> "x"
+          <> Text.pack (show n)
+          <> " board the engine was given."
+          )
+        )
+    Just named -> report
+      (Gtp.command_ gtp ("play " <> colorName color <> " " <> named))
 
 genMove :: Gtp.Gtp -> IORef Int -> Color -> IO (Either Text Move)
 genMove gtp current color = do
