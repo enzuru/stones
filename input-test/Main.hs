@@ -25,6 +25,7 @@ import           Control.Exception              ( IOException
                                                 , try
                                                 )
 import           Control.Monad                  ( void )
+import           Data.Maybe                     ( mapMaybe )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import qualified Data.Text.IO                  as Text
@@ -73,11 +74,9 @@ stones state = case stateGames state of
     | otherwise  -> Text.unwords named
    where
     board = gameBoard (sessionGame session)
-    named =
-      [ toVertex (sessionSize session) point
-      | point <- coords board
-      , stoneAt board point == Just Black
-      ]
+    named = mapMaybe
+      (toVertex (sessionSize session))
+      [ point | point <- coords board, stoneAt board point == Just Black ]
   [] -> "-"
 
 main :: IO ()

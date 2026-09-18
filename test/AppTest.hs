@@ -59,13 +59,13 @@ countingSource = do
     , counts
     )
 
--- | Run what an event asked somebody to do, and answer with the event
+-- | Run what an event asked somebody to do, and answer with the events
 -- it came back with.
-ran :: State -> Event -> PropertyT IO (Maybe Event)
+ran :: State -> Event -> PropertyT IO [Event]
 ran state event = case decide state event of
-  Close                 -> annotate "the window closed" >> failure
-  Carry _ Nothing       -> annotate "nothing was asked" >> failure
-  Carry _ (Just job)    -> evalIO job
+  Close              -> annotate "the window closed" >> failure
+  Carry _ Nothing    -> annotate "nothing was asked" >> failure
+  Carry _ (Just job) -> evalIO job
 
 -- | A window with nothing open in it, playing Black.
 empty' :: State
@@ -306,7 +306,7 @@ prop_openingATabStartsAnOpponentForIt :: Property
 prop_openingATabStartsAnOpponentForIt = withTests 1 . property $ do
   answer <- ran empty' (NewTabPressed 9)
   case answer of
-    Just (TabOpened 1 (Right engine)) -> engineName engine === "nobody"
+    [TabOpened 1 (Right engine)] -> engineName engine === "nobody"
     _ -> annotate "it did not start one" >> failure
 
 prop_aMoveIsPutToTheOpponentOfItsOwnTab :: Property
@@ -315,7 +315,7 @@ prop_aMoveIsPutToTheOpponentOfItsOwnTab = withTests 1 . property $ do
   -- The silent opponent passes, and the answer comes back addressed to
   -- the tab the move was played in.
   case answer of
-    Just (InTab 1 (Answered (Moved Pass))) -> success
+    [InTab 1 (Answered (Moved Pass))] -> success
     _ -> annotate "it came back to the wrong tab" >> failure
 
 prop_closingATabStopsTheOpponentThatWasPlayingInIt :: Property
