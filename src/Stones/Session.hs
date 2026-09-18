@@ -11,6 +11,7 @@
 module Stones.Session
   ( Session(..)
   , Opponent(..)
+  , Note(..)
   , SessionEvent(..)
   , Reply(..)
   , Step(..)
@@ -28,7 +29,6 @@ where
 
 import           Data.Maybe                     ( isJust )
 import           Data.Text                      ( Text )
-import qualified Data.Text                     as Text
 
 import           Go.Game
 import           Go.Types
@@ -60,9 +60,22 @@ data Session = Session
   , sessionOpponent :: Opponent
   , sessionHuman    :: Color
     -- ^ The colour the player at this window has in this game.
-  , sessionMessage  :: Text
-    -- ^ The line the window shows about this game.
+  , sessionNote     :: Maybe Note
+    -- ^ Something to say about this game, if there is anything.
   }
+
+-- | What the window has to say about a game beyond whose turn it is.
+--
+-- Everything else it shows is worked out from the game and from its
+-- opponent: that the engine is thinking, that the game is over, that
+-- the engine is gone and why. These two are what would otherwise have
+-- nowhere to live, because neither is written anywhere on the board.
+data Note
+  = Refused Illegal
+    -- ^ The last click was not a move the rules allow.
+  | Result Text
+    -- ^ What the opponent made the score, once the game had ended.
+  deriving (Eq, Show)
 
 -- | What the player does to a game.
 data SessionEvent
@@ -102,7 +115,7 @@ starting :: Color -> Int -> Session
 starting human n = Session { sessionGame     = newGame n
                            , sessionOpponent = Starting
                            , sessionHuman    = human
-                           , sessionMessage  = "Starting the engine."
+                           , sessionNote     = Nothing
                            }
 
 -- | The opponent this game was waiting for has started.
@@ -111,20 +124,17 @@ starting human n = Session { sessionGame     = newGame n
 -- thing that happens to this game is a question rather than a click.
 opened :: Engine -> Session -> Step
 opened engine session
-  | gameTurn game == sessionHuman session = stay session
-    { sessionOpponent = Idle engine
-    , sessionMessage  = "Your move."
-    }
-  | otherwise = asking session
-                       engine
-                       "The engine opens."
-                       (either Failed Moved <$> engineGenMove engine (gameTurn game))
+  | gameTurn game == sessionHuman session = stay
+    session { sessionOpponent = Idle engine }
+  | otherwise = asking
+    session
+    engine
+    (either Failed Moved <$> engineGenMove engine (gameTurn game))
   where game = sessionGame session
 
 -- | No opponent could be started for this game.
 couldNotOpen :: Text -> Session -> Session
-couldNotOpen why session =
-  session { sessionOpponent = Gone why, sessionMessage = why }
+couldNotOpen why session = session { sessionOpponent = Gone why }
 
 -- | The width of the board this game is played on.
 sessionSize :: Session -> Int
@@ -180,9 +190,13 @@ stay :: Session -> Step
 stay session = Step session Nothing
 
 -- | The game stands here, and the opponent has been asked this.
-asking :: Session -> Engine -> Text -> IO Reply -> Step
-asking session engine message job = Step
-  session { sessionOpponent = Waiting engine, sessionMessage = message }
+--
+-- Anything the window had to say is cleared: a refusal is about the
+-- click before this one, and a score is about a game that has ended,
+-- which is not a game anybody is being asked to move in.
+asking :: Session -> Engine -> IO Reply -> Step
+asking session engine job = Step
+  session { sessionOpponent = Waiting engine, sessionNote = Nothing }
   (Just job)
 
 -- | The player's own move.
@@ -190,15 +204,13 @@ humanMove :: Session -> Move -> Step
 humanMove session move = case ready session of
   Nothing     -> stay session
   Just engine -> case playMove human move (sessionGame session) of
-    Left reason -> stay session { sessionMessage = describeIllegal reason }
+    Left reason -> stay session { sessionNote = Just (Refused reason) }
     Right game
       | finished game -> asking session { sessionGame = game }
                                 engine
-                                "Both players passed. Counting."
                                 (tellThenScore engine human move)
       | otherwise -> asking session { sessionGame = game }
                             engine
-                            "The engine is thinking."
                             (tellThenMove engine human move)
   where human = sessionHuman session
 
@@ -211,11 +223,10 @@ resign session = case ready session of
   Nothing     -> stay session
   Just engine -> case playMove human Resign (sessionGame session) of
     Left  _    -> stay session
-    Right game -> stay session
-      { sessionGame     = game
-      , sessionOpponent = Idle engine
-      , sessionMessage  = "You resigned. " <> colorWord (opposite human) <> " wins."
-      }
+    Right game -> stay session { sessionGame     = game
+                               , sessionOpponent = Idle engine
+                               , sessionNote     = Nothing
+                               }
   where human = sessionHuman session
 
 -- | Take back moves until it is the player's turn again, on this
@@ -228,13 +239,10 @@ resign session = case ready session of
 takeBack :: Session -> Step
 takeBack session = case sessionOpponent session of
   Idle engine -> case rewind human (sessionGame session) of
-    Nothing -> stay session { sessionMessage = "There is nothing to take back." }
-    Just (count, game) -> asking
-      session { sessionGame = game }
-      engine
-      ("Took back " <> Text.pack (show count)
-                    <> (if count == 1 then " move." else " moves."))
-      (undoThen engine count (gameTurn game) human)
+    Nothing            -> stay session
+    Just (count, game) -> asking session { sessionGame = game }
+                                 engine
+                                 (undoThen engine count (gameTurn game) human)
   _ -> stay session
   where human = sessionHuman session
 
@@ -245,52 +253,31 @@ answered session reply = case sessionOpponent session of
   -- moved on since the question, so there is nothing to do with it.
   Waiting engine -> case reply of
     Moved move -> opponentMove session engine move
-    Ready      -> stay (freed engine session (waitingOn session))
-    Scored out -> stay (freed engine session ("Result: " <> out))
-    Failed why -> stay session { sessionOpponent = Gone why
-                               , sessionMessage  = why
-                               }
+    Ready      -> stay (freed engine session)
+    Scored out -> stay (freed engine session) { sessionNote = Just (Result out) }
+    Failed why -> stay session { sessionOpponent = Gone why }
   _ -> stay session
 
 -- | The opponent has answered and is free again.
-freed :: Engine -> Session -> Text -> Session
-freed engine session message =
-  session { sessionOpponent = Idle engine, sessionMessage = message }
-
--- | What to say when the opponent has finished and the game is back in
--- the player's hands.
-waitingOn :: Session -> Text
-waitingOn session
-  | finished game                       = "The game is over."
-  | gameTurn game == sessionHuman session = "Your move."
-  | otherwise                           = "The engine is thinking."
-  where game = sessionGame session
+freed :: Engine -> Session -> Session
+freed engine session = session { sessionOpponent = Idle engine }
 
 -- | The opponent's move, which is played on this board too.
 opponentMove :: Session -> Engine -> Move -> Step
 opponentMove session engine move = case move of
-  Resign -> stay (freed engine session { sessionGame = resigned } won)
+  Resign -> stay (freed engine session { sessionGame = resigned })
   _      -> case playMove them move (sessionGame session) of
     -- The opponent has answered with something this program's rules do
     -- not allow, which means the two boards have drifted apart. Saying
     -- so is the only honest thing left to do.
-    Left reason -> stay session
-      { sessionOpponent = Gone (disagreement reason)
-      , sessionMessage  = disagreement reason
-      }
+    Left reason -> stay session { sessionOpponent = Gone (disagreement reason) }
     Right game
       | finished game -> asking session { sessionGame = game }
                                 engine
-                                "Both players passed. Counting."
                                 (askScore engine)
-      | otherwise -> stay
-        (freed engine
-               session { sessionGame = game }
-               (if move == Pass then "The engine passed. Your move." else "Your move.")
-        )
+      | otherwise     -> stay (freed engine session { sessionGame = game })
  where
   them = opposite (sessionHuman session)
-  won  = "The engine resigned. You win."
   disagreement reason =
     "The engine and the board disagree: " <> describeIllegal reason
   resigned = case playMove them Resign (sessionGame session) of
@@ -308,11 +295,6 @@ rewind human = go 0
     | otherwise = case undoMove game of
       Nothing     -> if taken > 0 then Just (taken, game) else Nothing
       Just before -> go (taken + 1) before
-
--- | The name of a colour, for a sentence.
-colorWord :: Color -> Text
-colorWord Black = "Black"
-colorWord White = "White"
 
 -- * What gets asked of an opponent
 -----------------------------------

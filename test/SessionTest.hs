@@ -13,6 +13,7 @@ module SessionTest
 where
 
 import           Data.Maybe                     ( isJust )
+import           Data.Text                      ( Text )
 import           Hedgehog
 
 import           Go.Game
@@ -38,6 +39,12 @@ silent = Engine { engineName    = "nobody"
 game :: Session
 game = stepSession (opened silent (starting Black 9))
 
+-- | Why a game stopped, if it did.
+brokenBecause :: Session -> Maybe Text
+brokenBecause session = case sessionOpponent session of
+  Gone why -> Just why
+  _        -> Nothing
+
 -- | Where a game lands after an event.
 after :: Session -> SessionEvent -> Session
 after session event = stepSession (step session event)
@@ -52,7 +59,7 @@ prop_aStartedGameIsThePlayersToMove = withTests 1 . property $ do
   playable waiting === False
   boardSize (sessionGame waiting) === 9
   playable game === True
-  sessionMessage game === "Your move."
+  sessionNote game === Nothing
 
 prop_theOpponentOpensWhenThePlayerHasWhite :: Property
 prop_theOpponentOpensWhenThePlayerHasWhite = withTests 1 . property $ do
@@ -97,7 +104,7 @@ prop_aBrokenOpponentStopsTheGame = withTests 1 . property $ do
   let played = after game (Clicked (Coord 3 3))
       broken = after played (Answered (Failed "the pipe closed"))
       later  = after broken (Clicked (Coord 5 5))
-  sessionMessage broken === "the pipe closed"
+  brokenBecause broken === Just "the pipe closed"
   playable broken === False
   canUndo broken === False
   gameLast (sessionGame later) === Just (Coord 3 3)
@@ -118,6 +125,21 @@ prop_aMoveTheRulesRefuseStopsTheGame = withTests 1 . property $ do
       disagree = after played (Answered (Moved (Play (Coord 3 3))))
   playable disagree === False
   canUndo disagree === False
+  assert (brokenBecause disagree /= Nothing)
+
+prop_aClickTheRulesRefuseIsSaidSoAndThenForgotten :: Property
+prop_aClickTheRulesRefuseIsSaidSoAndThenForgotten = withTests 1 . property $ do
+  let played  = after game (Clicked (Coord 3 3))
+      back    = after played (Answered (Moved (Play (Coord 4 4))))
+      onTop   = after back (Clicked (Coord 3 3))
+      moved   = after onTop (Clicked (Coord 5 5))
+  -- The point already has a stone on it, so nothing is played and the
+  -- game says why.
+  sessionNote onTop === Just (Refused Occupied)
+  gameMoves (sessionGame onTop) === gameMoves (sessionGame back)
+  -- A move that goes down is not the moment to still be complaining
+  -- about the one before it.
+  sessionNote moved === Nothing
 
 prop_undoTakesBackBothMoves :: Property
 prop_undoTakesBackBothMoves = withTests 1 . property $ do
@@ -142,7 +164,7 @@ prop_twoPassesEndTheGameAndAskForAScore = withTests 1 . property $ do
       scored = after both (Answered (Scored "B+2.5"))
   finished (sessionGame both) === True
   assert (asked passed (Answered (Moved Pass)))
-  sessionMessage scored === "Result: B+2.5"
+  sessionNote scored === Just (Result "B+2.5")
 
 prop_resigningEndsTheGameWithoutAskingAnything :: Property
 prop_resigningEndsTheGameWithoutAskingAnything = withTests 1 . property $ do
