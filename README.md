@@ -10,8 +10,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
 A Go board in a libadwaita window, written in Haskell. It plays against
 GNU Go.
 
-![The board](docs/board.png)
-
 ## What it does
 
 You click a point and a stone goes down. GNU Go answers. The board
