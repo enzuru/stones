@@ -171,18 +171,28 @@ prop_aTabOnItsPageShowsThePage :: Property
 prop_aTabOnItsPageShowsThePage = withTests 1 . property $ do
   -- A tab opens on the page that asks what to play, so there is a
   -- status page and its buttons, and no board at all.
-  (pages, areas, buttons, titles) <- evalIO . built onePage $ \widget' -> do
-    pages   <- descendantsOf Adw.StatusPage widget'
-    areas   <- descendantsOf Gtk.DrawingArea widget'
-    buttons <- descendantsOf Gtk.Button widget'
-    titles  <- titlesUnder widget'
-    pure (length pages, length areas, length buttons, titles)
+  (pages, areas, rows, groups, titles) <- evalIO . built onePage $ \widget' -> do
+    pages  <- descendantsOf Adw.StatusPage widget'
+    areas  <- descendantsOf Gtk.DrawingArea widget'
+    rows   <- descendantsOf Adw.ActionRow widget'
+    groups <- descendantsOf Adw.ToggleGroup widget'
+    titles <- titlesUnder widget'
+    pure (length pages, length areas, length rows, length groups, titles)
   pages === 1
   areas === 0
-  -- Three boards, two colours, three strengths, and the one that
-  -- starts a game, beside the two in the header bar.
-  assert (buttons >= 9)
+  -- A row and a toggle group for each of the three things to choose.
+  rows === 3
+  groups === 3
   titles === [("New game", describeSetup asking)]
+
+prop_thePageOffersEveryChoiceThereIs :: Property
+prop_thePageOffersEveryChoiceThereIs = withTests 1 . property $ do
+  -- Three boards, two colours and three strengths, as toggles rather
+  -- than as anything the page had to be told about twice.
+  toggles <- evalIO . built onePage $ \widget' -> do
+    groups <- descendantsOf Adw.ToggleGroup widget'
+    traverse Adw.toggleGroupGetNToggles groups
+  toggles === [3, 2, 3]
 
 prop_startingAGameTurnsThePageIntoABoard :: Property
 prop_startingAGameTurnsThePageIntoABoard = withTests 1 . property $ do

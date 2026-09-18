@@ -58,11 +58,10 @@ built with cabal alone runs without that compiler installed.
 Nothing else is markup. The rest of the window is a function of the
 state that the declarative layer patches, and a `GtkBuilder` tree is
 built once and mutated by hand, so the two do not mix well. The page a
-tab opens on is the one place that would read better as markup today,
-and the reason is that this library has no instances for
-`AdwPreferencesGroup` or `AdwToggleGroup`. That is asked for as item 8
-of `CHANGES-FOR-STONES.md` in the library's repository, and it would
-make the page shorter in Haskell than it would be in Blueprint.
+tab opens on was the one place that would have read better as markup,
+until the library gained `AdwPreferencesGroup`, `AdwActionRow` and
+`AdwToggleGroup`. It is a settings page of the ordinary kind now, and
+it is shorter in Haskell than it would be in Blueprint.
 
 An installed copy is found by name, because its icon sits in a
 directory the theme already looks in. A copy being worked on is not, so

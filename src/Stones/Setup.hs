@@ -29,6 +29,9 @@ module Stones.Setup
   )
 where
 
+import           Data.Maybe                     ( fromMaybe
+                                                , listToMaybe
+                                                )
 import           Data.Text                      ( Text )
 import qualified Data.Vector                   as Vector
 import qualified Data.Text                     as Text
@@ -37,6 +40,14 @@ import qualified GI.Adw                        as Adw
 import qualified GI.Gtk                        as Gtk
 import           GI.Gtk.Declarative
 import           GI.Gtk.Declarative.Adwaita.Bin ( )
+import           GI.Gtk.Declarative.Adwaita.Rows
+                                                ( rowSuffix )
+import           GI.Gtk.Declarative.Adwaita.ToggleGroup
+                                                ( ToggleGroupParams(..)
+                                                , defaultToggleGroupParams
+                                                , toggle
+                                                , toggleGroup
+                                                )
 
 import           Go.Types
 import           Stones.Engine                  ( Strength(..)
@@ -104,7 +115,9 @@ colorWord White = "White"
 --
 -- An @AdwStatusPage@ is the widget for a window with nothing in it
 -- yet. It carries the program's own icon, which is the one place a
--- player sees it from inside the program.
+-- player sees it from inside the program. Under it is a settings page
+-- of the ordinary kind: a preferences group, a row per thing to
+-- choose, and a toggle group in each row.
 launchPage :: Setup -> Widget SetupEvent
 launchPage setup = bin
   Adw.StatusPage
@@ -114,25 +127,32 @@ launchPage setup = bin
   ]
   (bin
     Adw.Clamp
-    [#maximumSize := 340]
+    [#maximumSize := 400]
     (container
       Gtk.Box
-      [#orientation := Gtk.OrientationVertical, #spacing := 18]
-      [ BoxChild defaultBoxChildProperties
-        $ choice "Board" (map boardChoice boardWidths)
-      , BoxChild defaultBoxChildProperties $ choice
-        "You play"
-        [ pick (colorWord side) (setup.human == side) (ChoseSide side)
-        | side <- [Black, White]
+      [#orientation := Gtk.OrientationVertical, #spacing := 24]
+      [ BoxChild defaultBoxChildProperties $ container
+        Adw.PreferencesGroup
+        []
+        [ choice "Board"
+                 [ (Text.pack (show n), boardLabel n, n) | n <- boardWidths ]
+                 setup.size
+                 ChoseBoard
+        , choice "You play"
+                 [ (colorWord side, colorWord side, side)
+                 | side <- [Black, White]
+                 ]
+                 setup.human
+                 ChoseSide
+        , choice
+          "Opponent"
+          [ (describeStrength which, describeStrength which, which)
+          | which <- strengths
+          ]
+          setup.strength
+          ChoseStrength
         ]
-      , BoxChild defaultBoxChildProperties $ choice
-        "Opponent"
-        [ pick (describeStrength which)
-               (setup.strength == which)
-               (ChoseStrength which)
-        | which <- strengths
-        ]
-      , BoxChild defaultBoxChildProperties { padding = 6 } $ widget
+      , BoxChild defaultBoxChildProperties $ widget
         Gtk.Button
         [ #label := "Start Game"
         , #halign := Gtk.AlignCenter
@@ -142,48 +162,39 @@ launchPage setup = bin
       ]
     )
   )
+  where boardLabel n = let w = Text.pack (show n) in w <> "\215" <> w
+
+-- | One row of the page: what is being chosen, and a group of toggles
+-- to choose from.
+--
+-- Each toggle carries a name, which is what the group answers with, so
+-- the names and what they stand for are given together here and looked
+-- up on the way back.
+choice
+  :: Eq a
+  => Text
+  -> [(Text, Text, a)]
+  -> a
+  -> (a -> SetupEvent)
+  -> Widget SetupEvent
+choice title options chosen report = container
+  Adw.ActionRow
+  [#title := title]
+  [ rowSuffix
+      (toggleGroup
+        [#valign := Gtk.AlignCenter]
+        defaultToggleGroupParams
+          { toggles     = Vector.fromList
+            [ toggle name label | (name, label, _) <- options ]
+          , active      = listToMaybe
+            [ name | (name, _, value) <- options, value == chosen ]
+          , onActivated = Just (report . meaning)
+          }
+      )
+  ]
  where
-  boardChoice n =
-    pick (let w = Text.pack (show n) in w <> "\215" <> w)
-         (setup.size == n)
-         (ChoseBoard n)
-
--- | One row of the page: what is being chosen, and the buttons to
--- choose from.
-choice :: Text -> [Widget SetupEvent] -> Widget SetupEvent
-choice label buttons = container
-  Gtk.Box
-  [#orientation := Gtk.OrientationVertical, #spacing := 6]
-  [ BoxChild defaultBoxChildProperties $ widget
-    Gtk.Label
-    [#label := label, #halign := Gtk.AlignStart, classes ["heading"]]
-  , BoxChild defaultBoxChildProperties $ container
-    Gtk.Box
-    [#homogeneous := True, classes ["linked"]]
-    -- The children of a container are a vector, and OverloadedLists
-    -- covers a literal and leaves a comprehension alone.
-    (Vector.fromList
-      [ BoxChild defaultBoxChildProperties { expand = True, fill = True } button
-      | button <- buttons
-      ]
-    )
-  ]
-
--- | One button of a row.
---
--- The one that is chosen carries the accent colour, which is what a
--- row of linked buttons looks like when one of them is picked. Flat
--- buttons were tried instead, to keep the accent for the one button
--- that starts something, and they read as four loose labels rather
--- than as one control.
---
--- They are buttons rather than toggle buttons. A toggle clicked while
--- it is already on turns itself off, and the markup that follows says
--- what it always said, so nothing turns it back on.
-pick :: Text -> Bool -> SetupEvent -> Widget SetupEvent
-pick label chosen event = widget
-  Gtk.Button
-  [ #label := label
-  , classes (if chosen then ["suggested-action"] else [])
-  , on #clicked event
-  ]
+  -- A group answers with one of the names it was given, so the other
+  -- way is not a way this goes. What is chosen now is what it answers
+  -- with if it ever did, which is a choice that changes nothing.
+  meaning name =
+    fromMaybe chosen (lookup name [ (n, value) | (n, _, value) <- options ])
