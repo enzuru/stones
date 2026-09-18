@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Stones
+Comment=Play Go against GNU Go
+Keywords=go;baduk;weiqi;igo;board;game;
+Exec=stones
+Icon=com.github.enzuru.Stones
+Terminal=false
+Type=Application
+Categories=GNOME;GTK;Game;BoardGame;StrategyGame;
+StartupNotify=true
+StartupWMClass=stones

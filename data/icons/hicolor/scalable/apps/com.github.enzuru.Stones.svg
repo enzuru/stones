@@ -1,0 +1,71 @@
+<!-- SPDX-FileCopyrightText: 2026 Elias Khanzada
+     SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="wood" x1="0" y1="12" x2="0" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e9c184"/>
+      <stop offset="1" stop-color="#cc9a58"/>
+    </linearGradient>
+    <radialGradient id="black" cx="0.36" cy="0.32" r="0.78">
+      <stop offset="0" stop-color="#5a5566"/>
+      <stop offset="0.55" stop-color="#2a2536"/>
+      <stop offset="1" stop-color="#14101c"/>
+    </radialGradient>
+    <radialGradient id="white" cx="0.36" cy="0.32" r="0.78">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.6" stop-color="#f0eeea"/>
+      <stop offset="1" stop-color="#bfbcb5"/>
+    </radialGradient>
+    <!-- A shadow under whatever it is put on. Written out of the
+         primitives that every renderer has, rather than with
+         feDropShadow, which librsvg does not know and which takes the
+         whole filter down with it when it meets one. -->
+    <filter id="cast" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.8"/>
+      <feOffset dy="2.5" result="under"/>
+      <feFlood flood-color="#241f31" flood-opacity="0.45"/>
+      <feComposite in2="under" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="sits" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2.6"/>
+      <feOffset dy="3" result="under"/>
+      <feFlood flood-color="#241f31" flood-opacity="0.32"/>
+      <feComposite in2="under" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- The board. -->
+  <g filter="url(#sits)">
+    <rect x="12" y="12" width="104" height="104" rx="14" fill="url(#wood)"/>
+    <rect x="12" y="12" width="104" height="104" rx="14" fill="none"
+          stroke="#8a5f31" stroke-opacity="0.35" stroke-width="1.5"/>
+  </g>
+
+  <!-- The lines, and the marked point in the middle. -->
+  <g stroke="#3f2c14" stroke-opacity="0.85" stroke-linecap="square" fill="none">
+    <g stroke-width="2.4">
+      <path d="M26 26 H98 V98 H26 Z"/>
+    </g>
+    <g stroke-width="1.6">
+      <path d="M44 26 V98 M62 26 V98 M80 26 V98"/>
+      <path d="M26 44 H98 M26 62 H98 M26 80 H98"/>
+    </g>
+  </g>
+  <circle cx="62" cy="62" r="2.6" fill="#3f2c14" fill-opacity="0.85"/>
+
+  <!-- Two stones, one of each. -->
+  <g filter="url(#cast)">
+    <circle cx="44" cy="80" r="10.5" fill="url(#black)"/>
+    <circle cx="80" cy="44" r="10.5" fill="url(#white)"/>
+    <circle cx="80" cy="44" r="10.5" fill="none" stroke="#000000" stroke-opacity="0.16"
+            stroke-width="0.8"/>
+  </g>
+</svg>

@@ -5,6 +5,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Stones
 
+<img src="docs/icon.png" width="128" align="right" alt="">
+
 A Go board in a libadwaita window, written in Haskell. It plays against
 GNU Go.
 
@@ -27,6 +29,23 @@ at the end, because those are the two a player reaches for while
 playing. Resign and New Game are in the menu in the corner. The title
 says whose turn it is, and the line under it carries the numbers: the
 board, and how many stones each player has taken.
+
+## The icon
+
+`data/icons` holds the program's icon, at the names and in the
+directories an icon theme looks in:
+
+```
+data/icons/hicolor/scalable/apps/com.github.enzuru.Stones.svg
+data/icons/hicolor/symbolic/apps/com.github.enzuru.Stones-symbolic.svg
+data/com.github.enzuru.Stones.desktop
+```
+
+An installed copy is found by name, because its icon sits in a
+directory the theme already looks in. A copy being worked on is not, so
+the program adds `data/icons` beside the working directory to the ones
+the theme looks in. `STONES_DATA_DIR` says where that directory is if
+it is somewhere else.
 
 ## Building
 

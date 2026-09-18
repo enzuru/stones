@@ -22,6 +22,9 @@ build-type:           Simple
 tested-with:          GHC == 9.10.3
 extra-source-files:   README.md
                       LICENSE
+data-files:           data/com.github.enzuru.Stones.desktop
+                      data/icons/hicolor/scalable/apps/*.svg
+                      data/icons/hicolor/symbolic/apps/*.svg
 
 common warnings
   ghc-options:        -Wall -Wcompat -Wincomplete-record-updates
@@ -63,8 +66,12 @@ executable stones
   main-is:            Main.hs
   default-language:   Haskell2010
   build-depends:      base
+                    , directory                       >=1.3  && <1.4
+                    , filepath                        >=1.4  && <1.6
                     , gi-adwaita
+                    , gi-gdk
                     , gi-gio
+                    , gi-gtk
                     , gi-gtk4-declarative-app-simple
                     , stones
                     , text
@@ -108,10 +115,12 @@ test-suite stones-widget-tests
   main-is:            Main.hs
   default-language:   Haskell2010
   other-modules:      GobanWidgetTest
+                    , IconTest
                     , WidgetUtils
                     , WindowTest
   build-depends:      base
                     , gi-adwaita
+                    , gi-gdk
                     , gi-gio
                     , gi-glib
                     , gi-gtk
