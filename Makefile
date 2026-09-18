@@ -61,7 +61,7 @@ MEASURED := $(shell find $(SRC) -name '*.hs' \
 # but GTK still refuses to start without a display.
 XVFB := xvfb-run -s "-screen 0 1280x1024x24"
 
-.PHONY: all build stones check check-pure check-widget check-input coverage run clean
+.PHONY: all build stones ui check check-pure check-widget check-input coverage run clean
 
 # One compiler at a time. Each call below loads the whole gi-gtk
 # interface, so `make -j` multiplies the memory rather than dividing the
@@ -69,6 +69,18 @@ XVFB := xvfb-run -s "-screen 0 1280x1024x24"
 .NOTPARALLEL:
 
 all: stones
+
+# The markup, compiled from Blueprint.
+#
+# The compiled files are checked in, so that a copy built with cabal
+# alone runs without blueprint-compiler. Run this after editing a .blp
+# and check the answer in beside it.
+UI := $(patsubst %.blp,%.ui,$(wildcard data/ui/*.blp))
+
+ui: $(UI)
+
+data/ui/%.ui: data/ui/%.blp
+	blueprint-compiler compile --output $@ $<
 
 # Typecheck without producing code, which is the fast gate while
 # working.
@@ -80,7 +92,7 @@ build:
 
 stones: $(BUILD)/stones
 
-$(BUILD)/stones: $(SOURCES) $(APP)/Main.hs
+$(BUILD)/stones: $(SOURCES) $(APP)/Main.hs $(UI)
 	@mkdir -p $(BUILD)
 	ghc $(INCLUDES) -i$(APP) $(WARNINGS) $(PACKAGES) -threaded -O2 \
 	  -outputdir $(BUILD)/objects -o $@ $(APP)/Main.hs $(GHC_RTS)

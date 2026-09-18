@@ -32,6 +32,10 @@ import           Go.Types
 import           Stones.App
 import           Stones.Engine
 import           Stones.Session
+import           Stones.Menu                    ( Choice(..)
+                                                , MenuProps(..)
+                                                , choices
+                                                )
 import           Stones.Setup
 
 -- | An opponent that does nothing and says so.
@@ -494,6 +498,43 @@ prop_theWindowIsWiredToItsOwnUpdateAndView = withTests 1 . property $ do
   case update built (initialState built) NewTabPressed of
     Transition state' _ -> map fst state'.openTabs === [1]
     Exit                -> annotate "it exited" >> failure
+
+-- * The menu
+---------------
+
+prop_theMenuOffersTheSameItemsEveryTime :: Property
+prop_theMenuOffersTheSameItemsEveryTime = withTests 1 . property $ do
+  -- Greyed rather than gone, so the menu does not change shape under
+  -- somebody who has opened it before.
+  map (.name) (choices (MenuProps { canResign = True }))
+    === map (.name) (choices (MenuProps { canResign = False }))
+  map (.name) (choices (MenuProps { canResign = True }))
+    === ["new-game", "resign"]
+
+prop_aGameCanBeGivenUpAndAPageCannot :: Property
+prop_aGameCanBeGivenUpAndAPageCannot = withTests 1 . property $ do
+  map (.usable) (choices (MenuProps { canResign = True })) === [True, True]
+  map (.usable) (choices (MenuProps { canResign = False })) === [True, False]
+
+prop_theMenuResignsTheGameShowing :: Property
+prop_theMenuResignsTheGameShowing = withTests 1 . property $ do
+  -- The menu acts on whatever is showing, which is what a menu does.
+  let two      = next (started 2 (next oneGame NewTabPressed))
+                      (TabOpened 2 (Right silent))
+      onFirst  = next two (TabSelected "game-1")
+      resigned = next onFirst ResignChosen
+  fmap (finished . (.game)) (gameIn 1 resigned) === Just True
+  fmap (finished . (.game)) (gameIn 2 resigned) === Just False
+
+prop_resigningWithAPageShowingDoesNothing :: Property
+prop_resigningWithAPageShowingDoesNothing = withTests 1 . property $ do
+  let opening = next oneGame NewTabPressed
+      asked'  = next opening ResignChosen
+  -- The item is greyed, and the window drops it even so.
+  map fst asked'.openTabs === [1, 2]
+  fmap (finished . (.game)) (gameIn 1 asked') === Just False
+  -- And a window with nothing open at all.
+  map fst (next empty' ResignChosen).openTabs === []
 
 -- | Take an event, do whatever it asked for, and answer with where the
 -- window landed. This is what the application does, without the

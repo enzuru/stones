@@ -22,6 +22,7 @@ where
 
 import           Data.Text                      ( Text )
 import qualified GI.Adw                        as Adw
+import qualified GI.Gio                        as Gio
 import qualified GI.Gtk                        as Gtk
 import           GI.Gtk.Declarative
 import           GI.Gtk.Declarative.App.Simple  ( Transition(..) )
@@ -195,6 +196,21 @@ prop_startingAGameTurnsThePageIntoABoard = withTests 1 . property $ do
   -- is a board.
   said === Modified
   areas === 1
+
+prop_theMenuComesFromTheMarkup :: Property
+prop_theMenuComesFromTheMarkup = withTests 1 . property $ do
+  -- The menu is a GMenuModel read from data/ui/menu.ui. A file that
+  -- cannot be read leaves the button with nothing behind it, and the
+  -- window still comes up, so the only way to know is to look.
+  sections <- evalIO . built oneGame $ \widget' -> do
+    buttons <- descendantsOf Gtk.MenuButton widget'
+    case buttons of
+      [button] -> do
+        model <- Gtk.menuButtonGetMenuModel button
+        traverse Gio.menuModelGetNItems model
+      _ -> pure Nothing
+  -- One section for New Game and one for Resign.
+  sections === Just 2
 
 -- | The game showing in a window, for the tests that compare against
 -- what its own subtitle should say.

@@ -36,16 +36,33 @@ playing. Resign and New Game are in the menu in the corner. The title
 says whose turn it is, and the line under it carries the numbers: the
 board, and how many stones each player has taken.
 
-## The icon
+## What is not code
 
-`data/icons` holds the program's icon, at the names and in the
-directories an icon theme looks in:
+`data` holds the files the program reads rather than the ones it is
+compiled from:
 
 ```
 data/icons/hicolor/scalable/apps/com.github.enzuru.Stones.svg
 data/icons/hicolor/symbolic/apps/com.github.enzuru.Stones-symbolic.svg
 data/com.github.enzuru.Stones.desktop
+data/ui/menu.blp
+data/ui/menu.ui
 ```
+
+The menu is markup because a menu is data rather than widgets: a
+`GMenuModel` has no widget in it at all. `menu.blp` is the source and
+`menu.ui` is what the program reads. `make ui` compiles one into the
+other with `blueprint-compiler`, and both are checked in, so a copy
+built with cabal alone runs without that compiler installed.
+
+Nothing else is markup. The rest of the window is a function of the
+state that the declarative layer patches, and a `GtkBuilder` tree is
+built once and mutated by hand, so the two do not mix well. The page a
+tab opens on is the one place that would read better as markup today,
+and the reason is that this library has no instances for
+`AdwPreferencesGroup` or `AdwToggleGroup`. That is asked for as item 8
+of `CHANGES-FOR-STONES.md` in the library's repository, and it would
+make the page shorter in Haskell than it would be in Blueprint.
 
 An installed copy is found by name, because its icon sits in a
 directory the theme already looks in. A copy being worked on is not, so
@@ -108,6 +125,8 @@ Stones.Goban          The board, as a widget that draws itself with cairo.
 Stones.Session        One game, and what each thing the player does turns
                       it into.
 Stones.Setup          What a game is started from, and the page that asks.
+Stones.Menu           The menu in the corner, and the actions it names.
+Stones.Files          Where the files that are not code live.
 Stones.App            The tabs, the window, and where each answer belongs.
 ```
 
