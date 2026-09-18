@@ -25,6 +25,7 @@ extra-source-files:   README.md
 data-files:           data/com.github.enzuru.Stones.desktop
                       data/icons/hicolor/scalable/apps/*.svg
                       data/icons/hicolor/symbolic/apps/*.svg
+                      data/ui/*.ui
 
 common warnings
   ghc-options:        -Wall -Wcompat -Wincomplete-record-updates
@@ -42,8 +43,10 @@ library
                     , Stones.Engine
                     , Stones.Engine.GnuGo
                     , Stones.Engine.Gtp
+                    , Stones.Files
                     , Stones.Goban
                     , Stones.Goban.Geometry
+                    , Stones.Menu
                     , Stones.Session
                     , Stones.Setup
   build-depends:      base                            >=4.10 && <5
@@ -51,12 +54,16 @@ library
                     , gi-adwaita                      >=1    && <2
                     , gi-cairo-connector              >=0.1  && <0.2
                     , gi-cairo-render                 >=0.1  && <0.2
+                    , gi-gio                          >=2    && <3
+                    , gi-glib                         >=2    && <3
                     , gi-gobject                      >=2    && <3
                     , gi-gtk                          >=4    && <5
                     , gi-gtk4-declarative             >=0.8  && <0.9
                     , gi-gtk4-declarative-adwaita     >=0.8  && <0.9
                     , gi-gtk4-declarative-app-simple  >=0.8  && <0.9
                     , pipes                           >=4    && <5
+                    , directory                       >=1.3  && <1.4
+                    , filepath                        >=1.4  && <1.6
                     , process                         >=1.6  && <1.7
                     , text                            >=1.2  && <2.2
                     , vector                          >=0.12 && <0.14

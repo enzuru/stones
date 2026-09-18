@@ -25,10 +25,10 @@ import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import qualified Data.Text.IO                  as Text
 import           Options.Applicative
-import           System.Directory               ( doesDirectoryExist )
-import           System.Environment             ( lookupEnv )
+import           System.Directory               ( doesDirectoryExist
+                                                , doesFileExist
+                                                )
 import           System.Exit                    ( exitFailure )
-import           System.FilePath                ( (</>) )
 
 import qualified GI.Adw                        as Adw
 import qualified GI.Gdk                        as Gdk
@@ -38,6 +38,8 @@ import           GI.Gtk.Declarative.App.Simple  ( startInApplication )
 
 import           Go.Types
 import qualified Stones.App                    as Stones
+import           Stones.Files                   ( dataFile )
+import qualified Stones.Menu                   as Menu
 import           Stones.Engine                  ( Strength
                                                 , describeStrength
                                                 , strengths
@@ -146,7 +148,14 @@ main = do
   -- as a game that never starts, a long way from here. Trying one now
   -- turns that into a line on the terminal and an exit code.
   working <- GnuGo.probe chosen.program GnuGo.defaultLevel
+  -- The menu is markup in a file beside the program, and a window
+  -- whose menu is missing is a window with no way to start a game.
+  menu    <- dataFile Menu.menuFile
+  present <- doesFileExist menu
   case working of
+    _ | not present ->
+      Text.putStrLn ("There is no menu at " <> Text.pack menu <> ".")
+        >> exitFailure
     Left problem -> Text.putStrLn problem >> exitFailure
     Right () ->
       GnuGo.withGnuGo chosen.program $ \opponents -> do
@@ -175,11 +184,10 @@ identifier = "com.github.enzuru.Stones"
 -- its own source.
 useOwnIcon :: IO ()
 useOwnIcon = do
-  told    <- lookupEnv "STONES_DATA_DIR"
+  icons   <- dataFile "icons"
   display <- Gdk.displayGetDefault
   for_ display $ \display' -> do
     theme <- Gtk.iconThemeGetForDisplay display'
-    let icons = maybe "data" id told </> "icons"
     there <- doesDirectoryExist icons
     when there (Gtk.iconThemeAddSearchPath theme icons)
   Gtk.windowSetDefaultIconName identifier

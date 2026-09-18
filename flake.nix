@@ -45,7 +45,7 @@
             packages = with pkgs; [
               ghc
               cabal-install
-              gnumake pkg-config
+              gnumake pkg-config blueprint-compiler
               gtk4 gtk4.dev libadwaita gobject-introspection
               adwaita-icon-theme hicolor-icon-theme
               gnugo

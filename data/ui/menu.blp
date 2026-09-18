@@ -1,0 +1,26 @@
+// SPDX-FileCopyrightText: 2026 Elias Khanzada
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using Gtk 4.0;
+
+// The menu in the corner of the header bar.
+//
+// A menu is data rather than widgets, which is why it is written here
+// rather than built in Haskell. The names are the actions the window
+// puts in a group of its own, so nothing here reaches outside the
+// window it belongs to.
+menu main {
+  section {
+    item {
+      label: _("New Game");
+      action: "window.new-game";
+    }
+  }
+
+  section {
+    item {
+      label: _("Resign");
+      action: "window.resign";
+    }
+  }
+}

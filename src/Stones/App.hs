@@ -38,7 +38,9 @@ where
 
 import           Data.Bifunctor                 ( bimap )
 import           Data.List                      ( find )
-import           Data.Maybe                     ( mapMaybe )
+import           Data.Maybe                     ( isJust
+                                                , mapMaybe
+                                                )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import           Data.Vector                    ( Vector )
@@ -67,6 +69,7 @@ import qualified Pipes
 import           Go.Game
 import           Go.Types
 import           Stones.Engine
+import qualified Stones.Menu                   as Menu
 import           Stones.Goban
 import           Stones.Session
 import           Stones.Setup
@@ -119,6 +122,8 @@ data Event
   | TabSelected Text
   | TabClosePressed Text
   | TabsReordered (Vector Text)
+  | ResignChosen
+    -- ^ Give up the game showing, which is what the menu means by it.
   | Closed
 
 -- | A window with no games in it yet.
@@ -157,6 +162,13 @@ update' state = \case
 
   TabsReordered keys           -> Transition state { openTabs = inOrder } none
     where inOrder = mapMaybe (withId state) (Vector.toList keys)
+
+  -- The menu acts on whatever is showing, which is what a menu does.
+  -- The item is greyed when there is no game to give up, so this only
+  -- arrives when there is one.
+  ResignChosen                 -> case shownGame state of
+    Just (tab, _) -> inGame state tab (`step` ResignPressed)
+    Nothing       -> Transition state none
 
 -- | A game that has changed without anything being asked of anybody.
 stayAt :: Session -> Played
@@ -386,26 +398,20 @@ action state icon tip enabled event = case shownGame state of
     , on #clicked (InTab tab event)
     ]
 
--- | The menu in the corner: what a game is opened with, and the one
--- thing a player does to a game that is not worth a button of its own.
+-- | The menu in the corner.
+--
+-- The menu itself is markup, in @data\/ui\/menu.blp@. What is chosen
+-- from it arrives here as one of two events.
 mainMenu :: State -> Widget Event
-mainMenu state = menuButton
+mainMenu state = chosen <$> Menu.mainMenu
   [ #iconName := "open-menu-symbolic"
   , #primary := True
   , #tooltipText := "Main Menu"
   ]
-  -- The boards used to be here. They are on the page a tab opens on
-  -- now, with the colour and the opponent beside them, which is where
-  -- somebody choosing a game can see all three at once.
-  [ menuSection Nothing [menuItem "New Game" NewTabPressed]
-  , menuSection
-    Nothing
-    (Vector.fromList
-      [ menuItem "Resign" (InTab tab ResignPressed)
-      | (tab, _) <- maybe [] pure (shownGame state)
-      ]
-    )
-  ]
+  Menu.MenuProps { canResign = isJust (shownGame state) }
+ where
+  chosen Menu.NewGameChosen = NewTabPressed
+  chosen Menu.ResignChosen  = ResignChosen
 
 -- | Where a tab stands, which is the window's title.
 statusOf :: Stage -> Text
