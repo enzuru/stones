@@ -14,20 +14,28 @@ import           System.Exit                    ( exitFailure )
 
 import qualified AppTest
 import qualified BoardTest
+import qualified DrawTest
+import qualified FakeEngineTest
 import qualified GameTest
 import qualified GeometryTest
 import qualified GtpTest
+import qualified ProtocolTest
 import qualified SessionTest
+import qualified TypesTest
 import qualified VertexTest
 
 main :: IO ()
 main = do
   properties <- and <$> mapM
     checkParallel
-    [ BoardTest.tests
+    [ TypesTest.tests
+    , BoardTest.tests
     , GameTest.tests
     , VertexTest.tests
     , GeometryTest.tests
+    , DrawTest.tests
+    , ProtocolTest.tests
+    , FakeEngineTest.tests
     , SessionTest.tests
     , AppTest.tests
     ]

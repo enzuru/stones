@@ -17,9 +17,15 @@ module Stones.App
   , Event(..)
   , TabId
   , startingState
+  , Doing(..)
+  , decide
   , update'
   , view'
   , application
+    -- * The lines the header bar shows
+  , statusOf
+  , detailOf
+  , capturesOf
   )
 where
 
@@ -107,9 +113,32 @@ startingState opponents human = State { stateGames     = []
 -- * Updating
 -------------
 
+-- | What an event does to the window: where it leaves it, and what it
+-- asks somebody to do, if anything.
+--
+-- The doing is an action rather than a thread that has been started,
+-- so that deciding stays a function of its arguments. 'update'' is
+-- this with the action handed to the application to run, which is the
+-- only part that needs an application to be running.
+data Doing
+  = Carry State (Maybe (IO (Maybe Event)))
+    -- ^ The window carries on from here, and this is what to do.
+  | Close
+    -- ^ The window ends.
+
 update' :: State -> Event -> Transition State Event
-update' state = \case
-  Closed                       -> Exit
+update' state event = case decide state event of
+  Close            -> Exit
+  -- The job is not named, so nothing stops it part way through. A
+  -- command is several lines of protocol, and a job stopped between
+  -- two of them would leave the answer to the first sitting in the
+  -- pipe, to be read as the answer to whatever was asked next.
+  Carry state' job -> Transition state' (maybe none perform job)
+
+-- | What one event does to the window.
+decide :: State -> Event -> Doing
+decide state = \case
+  Closed                       -> Close
 
   NewTabPressed n              -> openTab state n
 
@@ -118,13 +147,16 @@ update' state = \case
 
   InTab tab event              -> inTab state tab (`step` event)
 
-  TabSelected key ->
-    Transition state { stateShowing = tabOf state key } none
+  TabSelected key              -> carry state { stateShowing = tabOf state key }
 
-  TabClosePressed key -> closeTab state key
+  TabClosePressed key          -> closeTab state key
 
-  TabsReordered keys  -> Transition state { stateGames = inOrder } none
+  TabsReordered keys           -> carry state { stateGames = inOrder }
     where inOrder = mapMaybe (withId state) (Vector.toList keys)
+
+-- | The window carries on from here, with nothing to do.
+carry :: State -> Doing
+carry state = Carry state Nothing
 
 -- | A step that changes the game and asks nobody anything.
 stayAt :: Session -> Step
@@ -136,33 +168,26 @@ stayAt session = Step session Nothing
 -- answer from an opponent whose tab was closed while it was thinking
 -- ends: the opponent was stopped, the answer it was in the middle of
 -- arrives as a failure, and there is no longer a game it is about.
-inTab :: State -> TabId -> (Session -> Step) -> Transition State Event
+inTab :: State -> TabId -> (Session -> Step) -> Doing
 inTab state tab move = case lookup tab (stateGames state) of
-  Nothing      -> Transition state none
-  Just session -> Transition state { stateGames = replaced } command
+  Nothing      -> carry state
+  Just session -> Carry state { stateGames = replaced } job
    where
     Step session' asked = move session
     replaced =
       [ (tab', if tab' == tab then session' else other)
       | (tab', other) <- stateGames state
       ]
-    command = case asked of
-      Nothing  -> none
-      -- The job is not named, so nothing stops it part way through. A
-      -- command is several lines of protocol, and a job stopped
-      -- between two of them would leave the answer to the first
-      -- sitting in the pipe, to be read as the answer to whatever was
-      -- asked next.
-      Just job -> perform (Just . InTab tab . Answered <$> job)
+    job = fmap (fmap (Just . InTab tab . Answered)) asked
 
 -- | Open a game on a board this wide, in a tab of its own.
-openTab :: State -> Int -> Transition State Event
-openTab state n = Transition
+openTab :: State -> Int -> Doing
+openTab state n = Carry
   state { stateGames   = stateGames state <> [(tab, starting human n)]
         , stateShowing = Just tab
         , stateNextTab = tab + 1
         }
-  (perform (Just . TabOpened tab <$> openOpponent (stateOpponents state) n))
+  (Just (Just . TabOpened tab <$> openOpponent (stateOpponents state) n))
  where
   tab   = stateNextTab state
   human = stateHuman state
@@ -172,17 +197,16 @@ openTab state n = Transition
 -- The window closes with its last tab. A window with no games in it
 -- would have nothing to show and nothing to do, and a new game is a
 -- new window away. The opponent of that last tab is not let go here,
--- because an exit carries no command: what stops it is the same thing
--- that stops the opponents of any tabs still open, which is whatever
--- handed this window its 'Opponents'.
-closeTab :: State -> Text -> Transition State Event
+-- because an ending window does nothing else afterwards: what stops it
+-- is the same thing that stops the opponents of any tabs still open,
+-- which is whatever handed this window its 'Opponents'.
+closeTab :: State -> Text -> Doing
 closeTab state key = case withId state key of
-  Nothing             -> Transition state none
+  Nothing             -> carry state
   Just (tab, session) -> case remaining of
-    [] -> Exit
-    _  -> Transition
-      state { stateGames = remaining, stateShowing = showing' }
-      (release (stateOpponents state) session)
+    [] -> Close
+    _  -> Carry state { stateGames = remaining, stateShowing = showing' }
+                (release (stateOpponents state) session)
    where
     remaining = [ open | open <- stateGames state, fst open /= tab ]
     -- Showing the tab that took the closed one's place, or the last
@@ -196,13 +220,13 @@ closeTab state key = case withId state key of
 -- An opponent that is thinking is stopped in the middle of it. That is
 -- what stopping is for, and the answer it was about to give arrives at
 -- a tab that is no longer there, where it is dropped.
-release :: Opponents -> Session -> Cmd Event
+release :: Opponents -> Session -> Maybe (IO (Maybe Event))
 release opponents session = case sessionOpponent session of
-  Idle    engine -> letGo engine
-  Waiting engine -> letGo engine
-  Starting       -> none
-  Gone _         -> none
-  where letGo engine = perform (Nothing <$ closeOpponent opponents engine)
+  Idle    engine -> Just (letGo engine)
+  Waiting engine -> Just (letGo engine)
+  Starting       -> Nothing
+  Gone _         -> Nothing
+  where letGo engine = Nothing <$ closeOpponent opponents engine
 
 -- | The tab after this one, or the one before it when this is the
 -- last.

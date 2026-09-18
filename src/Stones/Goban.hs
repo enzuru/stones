@@ -22,6 +22,16 @@ module Stones.Goban
   ( GobanProps(..)
   , GobanEvent(..)
   , goban
+    -- * What the widget decides, without the widget
+    --
+    -- $inner
+  , clickAt
+  , pointerAt
+  , wouldTakeAStone
+  , clicked
+  , pointerMoved
+  , pointerLeft
+  , draw
   )
 where
 
@@ -110,20 +120,17 @@ goban customAttributes customParams = Widget CustomWidget { .. }
     sendTo <- newIORef Nothing
     click  <- Gtk.gestureClickNew
     _      <- Gtk.on click #pressed $ \_presses x y -> do
-      shown <- readIORef props'
-      point <- pointUnder area (boardWidth shown) x y
-      heard <- readIORef sendTo
-      case (point, heard) of
-        (Just coord, Just callback) | playable shown coord ->
-          callback (GobanClicked coord)
-        _ -> pure ()
+      size' <- sizeOf area
+      clicked props' sendTo size' x y
     Gtk.widgetAddController area click
     motion <- Gtk.eventControllerMotionNew
     _      <- Gtk.on motion #motion $ \x y -> do
-      shown <- readIORef props'
-      point <- pointUnder area (boardWidth shown) x y
-      setHover area hover point
-    _ <- Gtk.on motion #leave (setHover area hover Nothing)
+      size' <- sizeOf area
+      moved <- pointerMoved props' hover size' x y
+      when moved (Gtk.widgetQueueDraw area)
+    _ <- Gtk.on motion #leave $ do
+      moved <- pointerLeft hover
+      when moved (Gtk.widgetQueueDraw area)
     Gtk.widgetAddController area motion
     pure
       ( area
@@ -148,33 +155,101 @@ goban customAttributes customParams = Widget CustomWidget { .. }
     writeIORef listener (Just callback)
     pure (fromCancellation (writeIORef listener Nothing))
 
+-- $inner
+--
+-- What the widget does with a click, with a pointer, and with a blank
+-- surface, as functions of their arguments rather than of a widget
+-- that has to be on a screen. The handlers above are these with the
+-- widget's size read out of the widget, and the tests are these with a
+-- size written down.
+
 -- | The width of the board being shown.
 boardWidth :: GobanProps -> Int
 boardWidth = size . gobanBoard
 
+-- | The board as it is laid out in a widget this wide and this tall.
+layout :: GobanProps -> Double -> Double -> Geometry
+layout props = geometry (boardWidth props)
+
 -- | Would a click here put a stone down? An occupied point and a board
 -- that is not taking moves both answer no, and both are checked again
 -- by the rules, which are what decides.
-playable :: GobanProps -> Coord -> Bool
-playable props coord =
+wouldTakeAStone :: GobanProps -> Coord -> Bool
+wouldTakeAStone props coord =
   gobanHover props /= Nothing && stoneAt (gobanBoard props) coord == Nothing
 
--- | Which point a place in the widget is on, measured against the
--- widget's size now rather than the size it had when it was drawn.
-pointUnder :: Gtk.DrawingArea -> Int -> Double -> Double -> IO (Maybe Coord)
-pointUnder area n x y = do
+-- | What a click at this place in a widget this size does, which is
+-- nothing at all unless it lands on a point that would take a stone.
+clickAt
+  :: GobanProps -> Double -> Double -> Double -> Double -> Maybe GobanEvent
+clickAt props width height x y = do
+  coord <- pointAt (layout props width height) x y
+  if wouldTakeAStone props coord then Just (GobanClicked coord) else Nothing
+
+-- | The point the pointer is over, which is where the faint stone
+-- goes. Every point counts, whether or not a stone could go on it:
+-- the drawing is what leaves the faint stone off an occupied point,
+-- so that the pointer moving onto one takes the stone away rather
+-- than leaving it behind on the point before.
+pointerAt
+  :: GobanProps -> Double -> Double -> Double -> Double -> Maybe Coord
+pointerAt props width height = pointAt (layout props width height)
+
+-- | What a click on the board does: nothing, or tell whoever is
+-- listening which point it landed on.
+--
+-- Nobody is listening between a subscription being cancelled and the
+-- next one starting, which is a moment that happens after every event
+-- the application handles, so a click has somewhere to go or it has
+-- nowhere to go and is dropped.
+clicked
+  :: IORef GobanProps
+  -> IORef (Maybe (GobanEvent -> IO ()))
+  -> (Double, Double)
+    -- ^ How big the board is.
+  -> Double
+  -> Double
+    -- ^ Where the click was.
+  -> IO ()
+clicked props listener (width, height) x y = do
+  shown <- readIORef props
+  heard <- readIORef listener
+  case (heard, clickAt shown width height x y) of
+    (Just callback, Just event) -> callback event
+    _                           -> pure ()
+
+-- | The pointer is over this place on a board this size. The answer is
+-- whether the board has to be drawn again, which it does only when the
+-- pointer has moved from one point to another.
+pointerMoved
+  :: IORef GobanProps
+  -> IORef (Maybe Coord)
+  -> (Double, Double)
+  -> Double
+  -> Double
+  -> IO Bool
+pointerMoved props hovered (width, height) x y = do
+  shown <- readIORef props
+  setHover hovered (pointerAt shown width height x y)
+
+-- | The pointer has gone, so the faint stone goes with it.
+pointerLeft :: IORef (Maybe Coord) -> IO Bool
+pointerLeft hovered = setHover hovered Nothing
+
+-- | Write down where the pointer is, and say whether that is news.
+setHover :: IORef (Maybe Coord) -> Maybe Coord -> IO Bool
+setHover hovered point = do
+  before <- readIORef hovered
+  writeIORef hovered point
+  pure (before /= point)
+
+-- | How big the widget is now, rather than how big it was when it was
+-- last drawn.
+sizeOf :: Gtk.DrawingArea -> IO (Double, Double)
+sizeOf area = do
   width  <- Gtk.widgetGetWidth area
   height <- Gtk.widgetGetHeight area
-  pure (pointAt (geometry n (fromIntegral width) (fromIntegral height)) x y)
-
--- | Move the faint stone under the pointer, and redraw only when it
--- has actually moved to another point.
-setHover :: Gtk.DrawingArea -> IORef (Maybe Coord) -> Maybe Coord -> IO ()
-setHover area hovered point = do
-  before <- readIORef hovered
-  when (before /= point) $ do
-    writeIORef hovered point
-    Gtk.widgetQueueDraw area
+  pure (fromIntegral width, fromIntegral height)
 
 -- * Drawing
 ------------
@@ -359,7 +434,7 @@ drawLastMark geo board coord = case stoneAt board coord of
 -- the point already has a stone on it.
 drawHover :: GobanProps -> Geometry -> Maybe Coord -> Cairo.Render ()
 drawHover props geo hovered = case (gobanHover props, hovered) of
-  (Just color, Just coord) | playable props coord -> do
+  (Just color, Just coord) | wouldTakeAStone props coord -> do
     let (x, y)       = centreOf geo coord
         radius       = geoStone geo
         (_, (r, g, b)) = stoneShades color
