@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: 2026 Elias Khanzada
+-- SPDX-License-Identifier: GPL-3.0-or-later
+
 -- | What the program needs from an opponent.
 --
 -- Everything the application does to an opponent is one of the seven

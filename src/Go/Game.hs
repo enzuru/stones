@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: 2026 Elias Khanzada
+-- SPDX-License-Identifier: GPL-3.0-or-later
+
 {-# LANGUAGE LambdaCase #-}
 
 -- | A game in progress: the board, whose turn it is, what has been

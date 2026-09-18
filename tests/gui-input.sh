@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 #
+# SPDX-FileCopyrightText: 2026 Elias Khanzada
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
 # Click on the board with real X11 input, and read back where the
 # stones went.
 #

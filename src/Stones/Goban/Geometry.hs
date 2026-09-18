@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: 2026 Elias Khanzada
+-- SPDX-License-Identifier: GPL-3.0-or-later
+
 -- | Where the lines and the stones of a board go, in the space a
 -- widget has been given.
 --

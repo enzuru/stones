@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Elias Khanzada
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Stones -- build the program and run its tests.
 #
 # Everything here assumes you are inside `nix develop`, which supplies
