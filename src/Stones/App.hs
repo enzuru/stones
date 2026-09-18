@@ -2,24 +2,20 @@
 {-# LANGUAGE OverloadedLabels  #-}
 {-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
 
--- | The window and what it does.
+-- | The window, which holds a game per tab.
 --
--- The program keeps the rules itself, in "Go.Game", and also tells the
--- engine about every move. Both boards therefore hold the same
--- position, and the reason for keeping two is that the rules answer a
--- click at once: a stone lands under the pointer without waiting for
--- a process to think. The engine is asked for a move and for a score,
--- and for nothing else.
+-- Each tab has a game and an opponent of its own. An opponent holds one
+-- board, so a second game means a second opponent rather than a second
+-- question to the first, and closing a tab lets its opponent go.
 --
--- If the two ever disagree, which would mean a bug in one of them, the
--- game stops and says so rather than playing on from a position only
--- half of the program believes in.
+-- Everything about one game is in "Stones.Session". This module is
+-- about the tabs: which games are open, which one is showing, and
+-- where each answer belongs.
 module Stones.App
   ( State(..)
   , Event(..)
-  , Reply(..)
+  , TabId
   , startingState
   , update'
   , view'
@@ -27,19 +23,27 @@ module Stones.App
   )
 where
 
+import           Data.List                      ( find )
+import           Data.Maybe                     ( mapMaybe )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
+import           Data.Vector                    ( Vector )
+import qualified Data.Vector                   as Vector
 
 import qualified GI.Adw                        as Adw
 import qualified GI.Gtk                        as Gtk
+import qualified GI.Pango                      as Pango
 import           GI.Gtk.Declarative
 import           GI.Gtk.Declarative.Adwaita.Bin ( )
 import           GI.Gtk.Declarative.Adwaita.HeaderBar
                                                 ( headerBarEnd
                                                 , headerBarStart
                                                 )
+import           GI.Gtk.Declarative.Adwaita.References
+                                                ( tabBarView )
 import           GI.Gtk.Declarative.Adwaita.Slots
                                                 ( titleWidget )
+import           GI.Gtk.Declarative.Adwaita.TabView
 import           GI.Gtk.Declarative.Adwaita.ToolbarView
                                                 ( toolbarBottom
                                                 , toolbarContent
@@ -52,330 +56,198 @@ import           Go.Game
 import           Go.Types
 import           Stones.Engine
 import           Stones.Goban
+import           Stones.Session
+
+-- | Tells one tab from another, for as long as the window is open. A
+-- number rather than the tab's place in the list, because tabs are
+-- closed and made and dragged about, and a name that moves is a name
+-- that sends an answer to the wrong game.
+type TabId = Int
 
 -- | Everything the window shows.
 data State = State
-  { stateGame     :: Game
-    -- ^ The position, and whose turn it is.
-  , stateEngine   :: Engine
-    -- ^ The opponent.
-  , stateHuman    :: Color
-    -- ^ The colour the player at this window has.
-  , stateThinking :: Bool
-    -- ^ Whether the engine has been asked for something and has not
-    -- answered yet, which is when the board takes no clicks.
-  , stateMessage  :: Text
-    -- ^ The line under the title.
-  , stateBroken   :: Bool
-    -- ^ Whether the engine has failed. A broken game takes no more
-    -- moves, because there is nothing left to play against.
-  , statePending  :: Maybe Int
-    -- ^ A board width waiting for the engine to be free.
-    --
-    -- Only one thing is ever asked of the engine at a time. A command
-    -- is several lines of protocol, and a second conversation started
-    -- in the middle of the first would have its lines read as answers
-    -- to the wrong questions. So a new game asked for while the engine
-    -- is thinking waits here until the answer comes back.
+  { stateGames     :: [(TabId, Session)]
+    -- ^ The open games, in the order their tabs are in.
+  , stateShowing   :: Maybe TabId
+    -- ^ The tab whose game the bars at the top and the bottom are
+    -- about.
+  , stateNextTab   :: TabId
+    -- ^ The name the next tab gets.
+  , stateHuman     :: Color
+    -- ^ The colour the player takes in a new game.
+  , stateOpponents :: Opponents
+    -- ^ Where a new tab gets its opponent.
   }
 
 -- | What the window reports.
 data Event
-  = Clicked Coord
-    -- ^ The player clicked a point on the board.
-  | Passed
-  | ResignPressed
-  | UndoPressed
-  | NewGamePressed Int
-  | FromEngine Reply
-    -- ^ The engine answered what it was last asked.
+  = InTab TabId SessionEvent
+    -- ^ Something happened to the game in this tab.
+  | TabOpened TabId (Either Text Engine)
+    -- ^ The opponent a new tab was waiting for, or why there is none.
+  | NewTabPressed Int
+    -- ^ Open a game on a board this wide, in a tab of its own.
+  | TabSelected Text
+  | TabClosePressed Text
+  | TabsReordered (Vector Text)
   | Closed
-  deriving (Show)
 
--- | What the engine answered.
-data Reply
-  = Moved Move
-    -- ^ It played this.
-  | Ready
-    -- ^ It did as it was told and has nothing to say: a board was set
-    -- up, or moves were taken off one.
-  | Scored Text
-    -- ^ This is what it makes the score.
-  | Failed Text
-    -- ^ It could not do as it was told.
-  deriving (Show)
-
--- | A window with a new game in it.
+-- | A window with no games in it yet.
 --
--- The game is not set up here. The application sends itself a
--- 'NewGamePressed' as its first event, so that setting up the first
--- board and setting up every later one are the same piece of code, and
--- so that the window is on the screen while the engine is starting.
---
--- Nothing has been asked of the engine yet, so this state is not
--- thinking. Saying that it was would make the first event queue behind
--- an answer that nobody was waiting for, and the board would never be
--- set up at all.
-startingState :: Engine -> Color -> Int -> State
-startingState engine human n = State { stateGame     = newGame n
-                                     , stateEngine   = engine
-                                     , stateHuman    = human
-                                     , stateThinking = False
-                                     , stateMessage  = "Setting up the board."
-                                     , stateBroken   = False
-                                     , statePending  = Nothing
-                                     }
+-- The first game is not opened here. The window sends itself a
+-- 'NewTabPressed' as its first event, so that the first tab and every
+-- later one are the same piece of code, and so that the window is on
+-- the screen while its first opponent is starting.
+startingState :: Opponents -> Color -> State
+startingState opponents human = State { stateGames     = []
+                                      , stateShowing   = Nothing
+                                      , stateNextTab   = 1
+                                      , stateHuman     = human
+                                      , stateOpponents = opponents
+                                      }
 
 -- * Updating
 -------------
 
 update' :: State -> Event -> Transition State Event
 update' state = \case
-  Closed        -> Exit
+  Closed                       -> Exit
 
-  Clicked coord -> humanMove state (Play coord)
-  Passed        -> humanMove state Pass
+  NewTabPressed n              -> openTab state n
 
-  -- A resignation ends the game where it stands. There is nothing to
-  -- tell the engine: the protocol has no command for it, and there is
-  -- no next move to ask for.
-  ResignPressed
-    | not (yourTurn state) -> Transition state none
-    | otherwise -> case playMove (stateHuman state) Resign (stateGame state) of
-      Left  _    -> Transition state none
-      Right game -> Transition
-        state { stateGame     = game
-              , stateThinking = False
-              , stateMessage  = "You resigned. "
-                                  <> colorWord (opposite (stateHuman state))
-                                  <> " wins."
-              }
-        none
+  TabOpened tab (Right engine) -> inTab state tab (opened engine)
+  TabOpened tab (Left  why   ) -> inTab state tab (stayAt . couldNotOpen why)
 
-  UndoPressed -> takeBack state
+  InTab tab event              -> inTab state tab (`step` event)
 
-  -- Nothing is asked of the engine while it is answering something
-  -- else, so a new game asked for now waits until it has.
-  NewGamePressed n
-    | stateThinking state -> Transition
-      state { statePending = Just n
-            , stateMessage = "The new board is waiting for the engine."
-            }
-      none
-    | otherwise -> startGame state n
+  TabSelected key ->
+    Transition state { stateShowing = tabOf state key } none
 
-  FromEngine reply -> case (statePending state, reply) of
-    -- The engine is free again and a new game was waiting for it.
-    (Just _, Failed why) -> Transition
-      state { stateThinking = False
-            , stateBroken   = True
-            , statePending  = Nothing
-            , stateMessage  = why
-            }
-      none
-    (Just n, _) -> startGame state { statePending = Nothing } n
-    (Nothing, _) -> engineReply state reply
+  TabClosePressed key -> closeTab state key
 
--- | What one answer from the engine does to the window.
-engineReply :: State -> Reply -> Transition State Event
-engineReply state = \case
-  Moved move -> engineMove state move
+  TabsReordered keys  -> Transition state { stateGames = inOrder } none
+    where inOrder = mapMaybe (withId state) (Vector.toList keys)
 
-  Ready      -> Transition
-    state { stateThinking = False, stateMessage = waitingOn state }
-    none
+-- | A step that changes the game and asks nobody anything.
+stayAt :: Session -> Step
+stayAt session = Step session Nothing
 
-  Scored result -> Transition
-    state { stateThinking = False, stateMessage = "Result: " <> result }
-    none
-
-  Failed why -> Transition
-    state { stateThinking = False, stateBroken = True, stateMessage = why }
-    none
-
--- | What to say when the engine has finished and the game is back in
--- the player's hands.
-waitingOn :: State -> Text
-waitingOn state
-  | finished (stateGame state)                    = "The game is over."
-  | gameTurn (stateGame state) == stateHuman state = "Your move."
-  | otherwise                                     = "The engine is thinking."
-
--- | The player's own move.
-humanMove :: State -> Move -> Transition State Event
-humanMove state move
-  | not (yourTurn state) = Transition state none
-  | otherwise = case playMove (stateHuman state) move (stateGame state) of
-    Left reason -> Transition state { stateMessage = describeIllegal reason } none
-    Right game
-      | finished game -> Transition
-        state { stateGame     = game
-              , stateThinking = True
-              , stateMessage  = "Both players passed. Counting."
-              }
-        (tellAndScore state move)
-      | otherwise -> Transition
-        state { stateGame     = game
-              , stateThinking = True
-              , stateMessage  = "The engine is thinking."
-              }
-        (tellAndAsk state move)
-
--- | The engine's answer, which is played on this program's board too.
-engineMove :: State -> Move -> Transition State Event
-engineMove state move = case move of
-  Resign -> Transition
-    state { stateGame     = resignedGame
-          , stateThinking = False
-          , stateMessage  = "The engine resigned. You win."
-          }
-    none
-  _ -> case playMove (opposite (stateHuman state)) move (stateGame state) of
-    -- The engine has answered with something this program's rules do
-    -- not allow, which means the two boards have drifted apart. Saying
-    -- so is the only honest thing left to do.
-    Left reason -> Transition
-      state { stateThinking = False
-            , stateBroken   = True
-            , stateMessage  = "The engine and the board disagree: "
-                                <> describeIllegal reason
-            }
-      none
-    Right game
-      | finished game -> Transition
-        state { stateGame     = game
-              , stateThinking = True
-              , stateMessage  = "Both players passed. Counting."
-              }
-        (askScore state)
-      | otherwise -> Transition
-        state { stateGame     = game
-              , stateThinking = False
-              , stateMessage  = if move == Pass
-                                  then "The engine passed. Your move."
-                                  else "Your move."
-              }
-        none
- where
-  resignedGame = case
-      playMove (opposite (stateHuman state)) Resign (stateGame state)
-    of
-      Right game -> game
-      Left  _    -> stateGame state
-
--- | Take back moves until it is the player's turn again, on both
--- boards.
+-- | Do something to the game in one tab.
 --
--- One move is not enough: taking back only the engine's answer would
--- leave the player looking at their own move with the engine about to
--- answer it again. Two is the usual number, and one is what is there
--- to take back when the engine opened the game.
-takeBack :: State -> Transition State Event
-takeBack state
-  | stateThinking state = Transition state none
-  | otherwise = case rewind (stateHuman state) (stateGame state) of
-    Nothing -> Transition
-      state { stateMessage = "There is nothing to take back." }
-      none
-    Just (count, game) -> Transition
-      state { stateGame     = game
-            , stateThinking = True
-            , stateMessage  = "Took back "
-                                <> Text.pack (show count)
-                                <> (if count == 1 then " move." else " moves.")
-            , stateBroken   = False
-            }
-      (fromEngine (undoThen state game count))
+-- An event for a tab that is not there is dropped. That is how an
+-- answer from an opponent whose tab was closed while it was thinking
+-- ends: the opponent was stopped, the answer it was in the middle of
+-- arrives as a failure, and there is no longer a game it is about.
+inTab :: State -> TabId -> (Session -> Step) -> Transition State Event
+inTab state tab move = case lookup tab (stateGames state) of
+  Nothing      -> Transition state none
+  Just session -> Transition state { stateGames = replaced } command
+   where
+    Step session' asked = move session
+    replaced =
+      [ (tab', if tab' == tab then session' else other)
+      | (tab', other) <- stateGames state
+      ]
+    command = case asked of
+      Nothing  -> none
+      -- The job is not named, so nothing stops it part way through. A
+      -- command is several lines of protocol, and a job stopped
+      -- between two of them would leave the answer to the first
+      -- sitting in the pipe, to be read as the answer to whatever was
+      -- asked next.
+      Just job -> perform (Just . InTab tab . Answered <$> job)
 
--- | Take the engine back the same number of moves, and ask it to move
--- if the board it is left with is one where it has the turn.
-undoThen :: State -> Game -> Int -> IO Reply
-undoThen state game count = do
-  let engine = stateEngine state
-  engineUndo engine count >>= \case
-    Left  why -> pure (Failed why)
-    Right ()
-      | gameTurn game == stateHuman state -> pure Ready
-      | otherwise -> either Failed Moved <$> engineGenMove engine (gameTurn game)
-
--- | How far back to go, and where that lands, taking at most two moves
--- off.
-rewind :: Color -> Game -> Maybe (Int, Game)
-rewind human = go 0
- where
-  go taken game
-    | taken > 0 && gameTurn game == human = Just (taken, game)
-    | taken >= 2 = Just (taken, game)
-    | otherwise = case undoMove game of
-      Nothing     -> if taken > 0 then Just (taken, game) else Nothing
-      Just before -> go (taken + 1) before
-
--- | Start a new game on a board of this width, on both boards.
-startGame :: State -> Int -> Transition State Event
-startGame state n = Transition
-  state { stateGame     = newGame n
-        , stateThinking = True
-        , stateMessage  = "Setting up a "
-                            <> Text.pack (show n)
-                            <> "x"
-                            <> Text.pack (show n)
-                            <> " board."
-        , stateBroken   = False
+-- | Open a game on a board this wide, in a tab of its own.
+openTab :: State -> Int -> Transition State Event
+openTab state n = Transition
+  state { stateGames   = stateGames state <> [(tab, starting human n)]
+        , stateShowing = Just tab
+        , stateNextTab = tab + 1
         }
-  (fromEngine (setUp (stateEngine state)))
+  (perform (Just . TabOpened tab <$> openOpponent (stateOpponents state) n))
  where
+  tab   = stateNextTab state
   human = stateHuman state
-  setUp engine = engineNewGame engine n >>= \case
-    Left  why -> pure (Failed why)
-    Right ()  -> if human == Black
-      then pure Ready
-      -- The player has White, so the engine opens and its move is what
-      -- ends the setting up.
-      else either Failed Moved <$> engineGenMove engine (opposite human)
 
--- | Tell the engine what was played, then ask it for its own move.
-tellAndAsk :: State -> Move -> Cmd Event
-tellAndAsk state move = fromEngine $ do
-  let engine = stateEngine state
-      human  = stateHuman state
-  engineNotify engine human move >>= \case
-    Left  why -> pure (Failed why)
-    Right ()  -> either Failed Moved <$> engineGenMove engine (opposite human)
-
--- | Tell the engine what was played, then ask it what the score is.
--- This is the second pass of a game that has just ended.
-tellAndScore :: State -> Move -> Cmd Event
-tellAndScore state move = fromEngine $ do
-  let engine = stateEngine state
-  engineNotify engine (stateHuman state) move >>= \case
-    Left  why -> pure (Failed why)
-    Right ()  -> either Failed Scored <$> engineScore engine
-
--- | Ask the engine what the score is.
-askScore :: State -> Cmd Event
-askScore state =
-  fromEngine (either Failed Scored <$> engineScore (stateEngine state))
-
--- | Put a job to the engine, and take its answer as an event.
+-- | Close a tab, and let its opponent go.
 --
--- The job is not named, so nothing stops it part way through. A
--- command is several lines of protocol, and a job stopped between two
--- of them would leave the answer to the first sitting in the pipe,
--- where it would be read as the answer to whatever was asked next.
-fromEngine :: IO Reply -> Cmd Event
-fromEngine job = perform (Just . FromEngine <$> job)
+-- The window closes with its last tab. A window with no games in it
+-- would have nothing to show and nothing to do, and a new game is a
+-- new window away. The opponent of that last tab is not let go here,
+-- because an exit carries no command: what stops it is the same thing
+-- that stops the opponents of any tabs still open, which is whatever
+-- handed this window its 'Opponents'.
+closeTab :: State -> Text -> Transition State Event
+closeTab state key = case withId state key of
+  Nothing             -> Transition state none
+  Just (tab, session) -> case remaining of
+    [] -> Exit
+    _  -> Transition
+      state { stateGames = remaining, stateShowing = showing' }
+      (release (stateOpponents state) session)
+   where
+    remaining = [ open | open <- stateGames state, fst open /= tab ]
+    -- Showing the tab that took the closed one's place, or the last
+    -- one, which is what a tab bar does.
+    showing' = case stateShowing state of
+      Just showed | showed /= tab -> Just showed
+      _                           -> fst <$> nextAfter tab (stateGames state)
 
--- | Can the player move right now?
-yourTurn :: State -> Bool
-yourTurn State {..} =
-  not stateThinking
-    && not stateBroken
-    && not (finished stateGame)
-    && gameTurn stateGame
-    == stateHuman
+-- | Stop the opponent of a game whose tab has closed.
+--
+-- An opponent that is thinking is stopped in the middle of it. That is
+-- what stopping is for, and the answer it was about to give arrives at
+-- a tab that is no longer there, where it is dropped.
+release :: Opponents -> Session -> Cmd Event
+release opponents session = case sessionOpponent session of
+  Idle    engine -> letGo engine
+  Waiting engine -> letGo engine
+  Starting       -> none
+  Gone _         -> none
+  where letGo engine = perform (Nothing <$ closeOpponent opponents engine)
+
+-- | The tab after this one, or the one before it when this is the
+-- last.
+nextAfter :: TabId -> [(TabId, Session)] -> Maybe (TabId, Session)
+nextAfter tab open = case break ((== tab) . fst) open of
+  (before, _ : after) -> case after of
+    next : _ -> Just next
+    []       -> lastOf before
+  _ -> Nothing
+ where
+  lastOf [] = Nothing
+  lastOf xs = Just (last xs)
+
+-- * The tabs
+-------------
+
+-- | What a tab is called in the markup, which is how one render is
+-- matched with the next.
+keyOf :: TabId -> Text
+keyOf tab = "game-" <> Text.pack (show tab)
+
+-- | The tab a key names.
+tabOf :: State -> Text -> Maybe TabId
+tabOf state key = fst <$> withId state key
+
+-- | The tab a key names, and the game in it.
+withId :: State -> Text -> Maybe (TabId, Session)
+withId state key = find ((== key) . keyOf . fst) (stateGames state)
+
+-- | The tab the bars at the top and the bottom are about, and the game
+-- in it.
+showing :: State -> Maybe (TabId, Session)
+showing state = do
+  tab     <- stateShowing state
+  session <- lookup tab (stateGames state)
+  pure (tab, session)
 
 -- * The window
 ---------------
+
+-- | The name the tab bar finds the tab view by.
+viewName :: Text
+viewName = "stones-games"
 
 view' :: State -> AppView Adw.ApplicationWindow Event
 view' state =
@@ -383,131 +255,185 @@ view' state =
       Adw.ApplicationWindow
       [ #title := "Stones"
       , #defaultWidth := 760
-      , #defaultHeight := 820
+      , #defaultHeight := 860
       , on #closeRequest (True, Closed)
       ]
     $ container
         Adw.ToolbarView
         []
         [ toolbarTop (header state)
-        , toolbarContent (board state)
+        , toolbarTop (widget Adw.TabBar [tabBarView viewName])
+        , toolbarContent (games state)
         , toolbarBottom (footer state)
         ]
 
--- | The bar at the top: a menu that starts a game, the title, and what
--- the engine is called.
+-- | The bar at the top: a menu that opens a game, the title, and what
+-- the game showing is played against.
 header :: State -> Widget Event
 header state = container
   Adw.HeaderBar
   [ titleWidget
       (widget
         Adw.WindowTitle
-        [#title := "Stones", #subtitle := stateMessage state]
+        [ #title := "Stones"
+        , #subtitle := maybe "No games open"
+                             (sessionMessage . snd)
+                             (showing state)
+        ]
       )
   ]
   [ headerBarStart
     (menuButton
-      [#label := "New Game", #tooltipText := "Start a game on a new board"]
+      [#label := "New Game", #tooltipText := "Open a game in a new tab"]
       [ menuSection
           Nothing
-          [ menuItem "9x9"   (NewGamePressed 9)
-          , menuItem "13x13" (NewGamePressed 13)
-          , menuItem "19x19" (NewGamePressed 19)
+          [ menuItem "9x9"   (NewTabPressed 9)
+          , menuItem "13x13" (NewTabPressed 13)
+          , menuItem "19x19" (NewTabPressed 19)
           ]
       ]
     )
   , headerBarEnd
     (widget
       Gtk.Label
-      [ #label := engineName (stateEngine state)
+      [ #label := maybe "" (opponentOf . snd) (showing state)
       , classes ["dim-label"]
-      , #tooltipText := "The program you are playing against"
+      , #tooltipText := "The program this game is played against"
       ]
     )
   ]
 
--- | The board itself.
-board :: State -> Widget Event
-board state = widgetOf (goban [] props)
+-- | The games, one to a tab.
+games :: State -> Widget Event
+games state = tabView
+  [#name := viewName]
+  defaultTabViewParams
+    { tabs        = Vector.fromList (map tabFor (stateGames state))
+    , selected    = keyOf <$> stateShowing state
+    , onSelected  = Just TabSelected
+    , onClosePage = Just TabClosePressed
+    , onReordered = Just TabsReordered
+    }
  where
-  game = stateGame state
+  tabFor (tab, session) = Tab
+    { tabKey   = keyOf tab
+    , tabTitle = "Game " <> Text.pack (show tab)
+    , tabChild = board tab session
+    }
+
+-- | One game's board, with a little room around it so that the wood
+-- does not touch the edge of the window.
+board :: TabId -> Session -> Widget Event
+board tab session = toEvent <$> goban
+  [ #marginStart := 8
+  , #marginEnd := 8
+  , #marginTop := 8
+  , #marginBottom := 8
+  ]
+  props
+ where
+  game  = sessionGame session
   props = GobanProps
     { gobanBoard       = gameBoard game
     , gobanLast        = gameLast game
-    , gobanHover       = if yourTurn state then Just (stateHuman state) else Nothing
+    , gobanHover       = sessionHuman session <$ ready session
     , gobanCoordinates = True
     }
-  widgetOf = fmap (\(GobanClicked coord) -> Clicked coord)
+  toEvent (GobanClicked coord) = InTab tab (Clicked coord)
 
--- | The bar at the bottom: what has been taken on the left, whose turn
--- it is in the middle, and what the player can do on the right.
+-- | The bar at the bottom, about the game showing: what has been taken
+-- on the left, whose turn it is in the middle, and what the player can
+-- do on the right.
+--
+-- A window with no game showing has one of these too, empty, so that
+-- the bar does not appear and disappear as the last tab closes.
 footer :: State -> Widget Event
 footer state = centerBox
   [classes ["toolbar"], #marginStart := 6, #marginEnd := 6]
-  (widget Gtk.Label [#label := capturesLine state, classes ["dim-label"]])
-  (widget Gtk.Label [#label := turnLine state])
-  (container
-    Gtk.Box
-    [#spacing := 6]
-    [ BoxChild defaultBoxChildProperties $ button
-      "Pass"
-      "Give the move to the other player"
-      (yourTurn state)
-      Passed
-    , BoxChild defaultBoxChildProperties $ button
-      "Undo"
-      "Take back your last move and the answer to it"
-      (not (stateThinking state) && gameMoves (stateGame state) /= [])
-      UndoPressed
-    , BoxChild defaultBoxChildProperties $ button
-      "Resign"
-      "Give the game up"
-      (yourTurn state)
-      ResignPressed
+  (widget
+    Gtk.Label
+    [ #label := capturesLine state
+    , #tooltipText := "The board, and the stones each player has taken"
+    , classes ["dim-label"]
+    -- A narrow window would otherwise allocate this label more room
+    -- than the bar has, and it would run into the one in the middle.
+    , #ellipsize := Pango.EllipsizeModeEnd
+    , #maxWidthChars := 28
     ]
   )
+  (widget Gtk.Label
+          [#label := turnLine state, #ellipsize := Pango.EllipsizeModeEnd]
+  )
+  (container Gtk.Box [#spacing := 6] (buttons (showing state)))
+ where
+  buttons Nothing = []
+  buttons (Just (tab, session)) =
+    [ BoxChild defaultBoxChildProperties $ button
+      tab
+      "Pass"
+      "Give the move to the other player"
+      (playable session)
+      Passed
+    , BoxChild defaultBoxChildProperties $ button
+      tab
+      "Undo"
+      "Take back your last move and the answer to it"
+      (canUndo session)
+      UndoPressed
+    , BoxChild defaultBoxChildProperties
+      $ button tab "Resign" "Give the game up" (playable session) ResignPressed
+    ]
 
--- | One button of the bottom bar.
-button :: Text -> Text -> Bool -> Event -> Widget Event
-button label tooltip enabled event = widget
+-- | One button of the bottom bar, which acts on the game in this tab.
+button :: TabId -> Text -> Text -> Bool -> SessionEvent -> Widget Event
+button tab label tooltip enabled event = widget
   Gtk.Button
   [ #label := label
   , #tooltipText := tooltip
   , #sensitive := enabled
-  , on #clicked event
+  , on #clicked (InTab tab event)
   ]
 
--- | How many stones each player has taken.
+-- | How many stones each player has taken, and what board they are
+-- playing on.
 capturesLine :: State -> Text
-capturesLine state =
-  "Black has taken "
-    <> Text.pack (show (blackCaptured captures))
-    <> ", White has taken "
-    <> Text.pack (show (whiteCaptured captures))
-  where captures = gameCaptures (stateGame state)
+capturesLine state = case showing state of
+  Nothing -> ""
+  Just (_, session) ->
+    size' <> "  ·  Black " <> took blackCaptured <> "  ·  White " <> took
+      whiteCaptured
+   where
+    captures = gameCaptures (sessionGame session)
+    size' = let n = Text.pack (show (sessionSize session)) in n <> "x" <> n
+    took field = Text.pack (show (field captures))
 
--- | Whose turn it is, or how the game ended.
+-- | Whose turn it is in the game showing, or how it ended.
 turnLine :: State -> Text
-turnLine state
-  | stateBroken state = "The game has stopped."
-  | finished game = "The game is over."
-  | stateThinking state = "Thinking..."
-  | gameTurn game == stateHuman state = "Your move (" <> colorWord (stateHuman state) <> ")"
-  | otherwise = "The engine's move"
-  where game = stateGame state
+turnLine state = case showing state of
+  Nothing           -> "No game"
+  Just (_, session) -> case sessionOpponent session of
+    Gone _   -> "The game has stopped."
+    Starting -> "Starting..."
+    _
+      | finished (sessionGame session) -> "The game is over."
+      | playable session -> "Your move ("
+        <> colorWord (sessionHuman session)
+        <> ")"
+      | otherwise -> "Thinking..."
 
 -- | The name of a colour, for a sentence.
 colorWord :: Color -> Text
 colorWord Black = "Black"
 colorWord White = "White"
 
--- | The application, ready to run.
-application :: Engine -> Color -> Int -> App Adw.ApplicationWindow State Event
-application engine human n = defaultApp
+-- | The window, ready to run.
+application
+  :: Opponents -> Color -> Int -> App Adw.ApplicationWindow State Event
+application opponents human n = defaultApp
   { update       = update'
   , view         = view'
-  , initialState = startingState engine human n
-    -- The one event the application sends itself, which sets the first
-    -- board up.
-  , inputs       = [Pipes.yield (NewGamePressed n)]
+  , initialState = startingState opponents human
+    -- The one event the window sends itself, which opens the first
+    -- game.
+  , inputs       = [Pipes.yield (NewTabPressed n)]
   }

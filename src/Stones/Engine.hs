@@ -13,12 +13,27 @@
 -- both: it stops asking and it says what happened.
 module Stones.Engine
   ( Engine(..)
+  , Opponents(..)
   )
 where
 
 import           Data.Text                      ( Text )
 
 import           Go.Types
+
+-- | Where a program gets its opponents and where it gives them back.
+--
+-- A window with several games in it needs an opponent for each, so
+-- something has to make them one at a time rather than hand over the
+-- one there is. Whatever makes them also knows how to let one go, and
+-- knows what is still running when the window closes, so the two
+-- belong together.
+data Opponents = Opponents
+  { openOpponent  :: Int -> IO (Either Text Engine)
+    -- ^ An opponent of its own, for a game on a board this wide.
+  , closeOpponent :: Engine -> IO ()
+    -- ^ Let one go, when the game it was playing has closed.
+  }
 
 -- | An opponent, and the handful of things that can be asked of one.
 data Engine = Engine
