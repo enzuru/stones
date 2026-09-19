@@ -44,24 +44,36 @@ import           Go.Game
 import           Go.Types
 import           Go.Vertex                      ( toVertex )
 import           Stones.App
-import           Stones.Engine
+import           Control.Concurrent.STM         ( atomically )
+import           Pipes.Concurrent               ( fromInput
+                                                , send
+                                                , spawn'
+                                                , unbounded
+                                                )
+
+import           Stones.Opponent
 import           Stones.Session
 import           Stones.Setup
 
 -- | An opponent that passes whatever it is asked, so that the board
 -- comes back to the player after every move.
-passer :: Engine
-passer = Engine { name    = "passer"
-                , newGame = \_ -> pure (Right ())
-                , notify  = \_ _ -> pure (Right ())
-                , genMove = \_ -> pure (Right Pass)
-                , undo    = \_ -> pure (Right ())
-                , score   = pure (Right "0")
-                , close   = pure ()
-                }
+passing :: IO Opponent
+passing = do
+  (output, input, seal) <- spawn' unbounded
+  pure Opponent
+    { name  = "passer"
+    , tell  = \case
+      -- Asked for a move, it passes, and the pass arrives the way a
+      -- move from a server would: on the stream rather than in the
+      -- answer.
+      Asked -> Right () <$ atomically (send output (Played White Pass))
+      _     -> pure (Right ())
+    , hear  = fromInput input
+    , leave = atomically seal
+    }
 
 source :: Opponents
-source = Opponents { open  = \_ _ -> pure (Right passer)
+source = Opponents { open  = \_ -> Right <$> passing
                    , close = \_ -> pure ()
                    }
 

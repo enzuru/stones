@@ -20,7 +20,7 @@
 -- from whatever thread the work is on, and the protocol has no way to
 -- tell two answers apart if two commands are in flight, so the lock is
 -- what keeps a question next to its own answer.
-module Stones.Engine.Gtp
+module Stones.Opponent.Gtp
   ( Gtp
   , GtpError(..)
   , describeGtpError

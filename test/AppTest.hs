@@ -20,17 +20,19 @@ import           Hedgehog
 import qualified Pipes.Prelude                 as Pipes
 import qualified Data.Vector                   as Vector
 
+import qualified Data.List                     as List
 import           GI.Gtk.Declarative.App.Simple  ( App(..)
                                                 , Cmd
                                                 , Transition(..)
                                                 , jobsOf
                                                 , none
+                                                , subKey
                                                 )
 
 import           Go.Game
 import           Go.Types
 import           Stones.App
-import           Stones.Engine
+import           Stones.Opponent
 import           Stones.Session
 import           Stones.Menu                    ( Choice(..)
                                                 , MenuProps(..)
@@ -39,19 +41,16 @@ import           Stones.Menu                    ( Choice(..)
 import           Stones.Setup
 
 -- | An opponent that does nothing and says so.
-silent :: Engine
-silent = Engine { name    = "nobody"
-                , newGame = \_ -> pure (Right ())
-                , notify  = \_ _ -> pure (Right ())
-                , genMove = \_ -> pure (Right Pass)
-                , undo    = \_ -> pure (Right ())
-                , score   = pure (Right "0")
-                , close   = pure ()
-                }
+silent :: Opponent
+silent = Opponent { name  = "nobody"
+                  , tell  = \_ -> pure (Right ())
+                  , hear  = pure ()
+                  , leave = pure ()
+                  }
 
 -- | A source of opponents that hands out the same silent one.
 source :: Opponents
-source = Opponents { open  = \_ _ -> pure (Right silent)
+source = Opponents { open  = \_ -> pure (Right silent)
                    , close = \_ -> pure ()
                    }
 
@@ -64,7 +63,7 @@ countingSource = do
   let handedOut  = modifyIORef' counts (\(out, back) -> (out + 1, back))
       handedBack = modifyIORef' counts (\(out, back) -> (out, back + 1))
   pure
-    ( Opponents { open  = \_ _ -> Right silent <$ handedOut
+    ( Opponents { open  = \_ -> Right silent <$ handedOut
                 , close = \_ -> handedBack
                 }
     , counts
@@ -126,7 +125,7 @@ oneGame = next (started 1 (next empty' NewTabPressed)) (TabOpened 1 (Right silen
 
 -- | Why the game in a tab stopped, if it did.
 brokenBecause :: Session -> Maybe Text
-brokenBecause session = case session.opponent of
+brokenBecause session = case session.standing of
   Gone why -> Just why
   _        -> Nothing
 
@@ -213,7 +212,7 @@ prop_anAnswerForAClosedTabIsDropped = withTests 1 . property $ do
   -- failure, and by then its tab is gone.
   let two    = next (started 2 (next oneGame NewTabPressed)) (TabOpened 2 (Right silent))
       closed = next two (TabClosePressed "game-1")
-      stray  = next closed (InTab 1 (Answered (Failed "stopped")))
+      stray  = next closed (InTab 1 (Arrived (Lost "stopped")))
   map fst closed.openTabs === [2]
   map fst stray.openTabs === [2]
   stray.showing === Just 2
@@ -281,7 +280,7 @@ inPlay :: Session
 inPlay = landed (opened silent (starting Black 9))
 
 -- | The game a transition leaves behind.
-landed :: Played -> Session
+landed :: Step -> Session
 landed (Transition session _) = session
 landed Exit                   = error "a game ended the window"
 
@@ -309,9 +308,9 @@ prop_aTabOnItsPageSaysWhatItIsAskingFor = withTests 1 . property $ do
 prop_theTitleSaysHowTheGameEnded :: Property
 prop_theTitleSaysHowTheGameEnded = withTests 1 . property $ do
   let passed   = onceMore inPlay Passed
-      bothPass = onceMore passed (Answered (Moved Pass))
+      bothPass = onceMore passed (Arrived (Played White Pass))
       played   = onceMore inPlay (Clicked (Coord 3 3))
-      theirs   = onceMore played (Answered (Moved Resign))
+      theirs   = onceMore played (Arrived (Played White Resign))
       mine     = onceMore inPlay ResignPressed
   stateOf bothPass === "Game over"
   stateOf theirs === "The engine resigned"
@@ -328,11 +327,11 @@ prop_theSubtitleGivesWayToNews = withTests 1 . property $ do
   -- A score at the end, a point the rules would not take, and an
   -- engine that has gone all have more to say than the counts do.
   let passed = onceMore inPlay Passed
-      scored = onceMore passed (Answered (Scored "B+2.5"))
+      scored = onceMore passed (Arrived (Counted "B+2.5"))
   aboutGame scored === "Result: B+2.5"
 
   let played = onceMore inPlay (Clicked (Coord 3 3))
-      back   = onceMore played (Answered (Moved (Play (Coord 4 4))))
+      back   = onceMore played (Arrived (Played White (Play (Coord 4 4))))
       onTop  = onceMore back (Clicked (Coord 3 3))
   aboutGame onTop === describeIllegal Occupied
 
@@ -408,14 +407,41 @@ prop_startingAGameStartsAnOpponentForIt = withTests 1 . property $ do
     [TabOpened 1 (Right engine)] -> engine.name === "nobody"
     _ -> annotate "it did not start one" >> failure
 
-prop_aMoveIsPutToTheOpponentOfItsOwnTab :: Property
-prop_aMoveIsPutToTheOpponentOfItsOwnTab = withTests 1 . property $ do
+prop_aMoveIsSaidAndNothingComesBackThatWay :: Property
+prop_aMoveIsSaidAndNothingComesBackThatWay = withTests 1 . property $ do
+  -- Playing says two things to the opponent and waits for neither.
+  -- What the opponent answers arrives on its stream instead, which is
+  -- the subscription below rather than this job.
   answer <- ran oneGame (InTab 1 (Clicked (Coord 3 3)))
-  -- The silent opponent passes, and the answer comes back addressed to
-  -- the tab the move was played in.
-  case answer of
-    [InTab 1 (Answered (Moved Pass))] -> success
-    _ -> annotate "it came back to the wrong tab" >> failure
+  -- Event holds an opponent, which has nothing to print, so what there
+  -- is to assert is that there was nothing.
+  null answer === True
+
+prop_everyGameIsListenedToAndNothingElseIs :: Property
+prop_everyGameIsListenedToAndNothingElseIs = withTests 1 . property $ do
+  let two     = next (started 2 (next oneGame NewTabPressed))
+                     (TabOpened 2 (Right silent))
+      opening = next two NewTabPressed
+      broken  = next opening (InTab 1 (Arrived (Lost "gone")))
+  -- One stream for each game that has an opponent.
+  length (listeners empty') === 0
+  length (listeners oneGame) === 1
+  length (listeners two) === 2
+  -- The third tab is still on its page, so there is nothing to listen
+  -- to yet, and a game whose opponent has gone is listened to no
+  -- longer.
+  length (listeners opening) === 2
+  length (listeners broken) === 1
+
+prop_twoGamesAreTwoStreamsAndNotOne :: Property
+prop_twoGamesAreTwoStreamsAndNotOne = withTests 1 . property $ do
+  -- A name is shared by everything the loop runs, so two games under
+  -- one name would be one game listened to twice.
+  let two   = next (started 2 (next oneGame NewTabPressed))
+                   (TabOpened 2 (Right silent))
+      names = map subKey (listeners two)
+  length names === 2
+  names === List.nub names
 
 prop_closingATabStopsTheOpponentThatWasPlayingInIt :: Property
 prop_closingATabStopsTheOpponentThatWasPlayingInIt =

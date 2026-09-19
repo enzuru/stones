@@ -25,6 +25,7 @@ module Stones.App
   , Stage(..)
   , startingState
   , update'
+  , listeners
   , view'
   , application
     -- * The lines the header bar shows
@@ -68,7 +69,7 @@ import qualified Pipes
 
 import           Go.Game
 import           Go.Types
-import           Stones.Engine
+import           Stones.Opponent
 import qualified Stones.Menu                   as Menu
 import           Stones.Goban
 import           Stones.Session
@@ -115,7 +116,7 @@ data Event
     -- ^ Something happened to the game in this tab.
   | InSetup TabId SetupEvent
     -- ^ Somebody chose something on this tab's page, or started it.
-  | TabOpened TabId (Either Text Engine)
+  | TabOpened TabId (Either Text Opponent)
     -- ^ The opponent a game was waiting for, or why there is none.
   | NewTabPressed
     -- ^ Open a tab, on the page that asks what to play.
@@ -171,7 +172,7 @@ update' state = \case
     Nothing       -> Transition state none
 
 -- | A game that has changed without anything being asked of anybody.
-stayAt :: Session -> Played
+stayAt :: Session -> Step
 stayAt session = Transition session none
 
 -- | Open a tab, on the page that asks what to play.
@@ -201,9 +202,7 @@ inSetup state tab event = case lookup tab state.openTabs of
         -- What was started is what the next tab asks for first.
         { opening = setup
         }
-      (perform
-        (Just . TabOpened tab <$> state.opponents.open setup.size setup.strength)
-      )
+      (perform (Just . TabOpened tab <$> state.opponents.open setup))
     _ -> Transition (replacing state tab (Choosing (chose setup event))) none
   _ -> Transition state none
 
@@ -218,7 +217,7 @@ inSetup state tab event = case lookup tab state.openTabs of
 -- was closed while it was thinking ends: the opponent was stopped, the
 -- answer it was in the middle of arrives as a failure, and there is no
 -- longer a game it is about.
-inGame :: State -> TabId -> (Session -> Played) -> Transition State Event
+inGame :: State -> TabId -> (Session -> Step) -> Transition State Event
 inGame state tab move = case lookup tab state.openTabs of
   Just (Playing session) ->
     bimap (replacing state tab . Playing) (InTab tab) (move session)
@@ -263,12 +262,9 @@ closeTab state key = case withId state key of
 -- there, where it is dropped.
 release :: Opponents -> Stage -> Cmd Event
 release _         (Choosing _      ) = none
-release opponents (Playing session) = case session.opponent of
-  Idle    engine -> letGo engine
-  Waiting engine -> letGo engine
-  Starting       -> none
-  Gone _         -> none
-  where letGo engine = perform (Nothing <$ opponents.close engine)
+release opponents (Playing session) = case listening session of
+  Just them -> perform (Nothing <$ opponents.close them)
+  Nothing   -> none
 
 -- | The tab after this one, or the one before it when this is the
 -- last.
@@ -314,6 +310,28 @@ shownGame state = case shown state of
 
 -- * The window
 ---------------
+
+-- | What the window listens to, which is one stream for each game
+-- that has an opponent.
+--
+-- The name carries the tab, so two games are two subscriptions. That
+-- is what 'GI.Gtk.Declarative.App.Simple.qualifyingSubs' is for where
+-- the names come from somewhere else, and it is not needed here
+-- because these names are made in one place and the tab is in them
+-- already.
+--
+-- A tab that closes takes its name out, and the loop cancels the
+-- stream. A game whose opponent has gone does the same.
+listeners :: State -> [Sub Event]
+listeners state =
+  [ InTab tab . Arrived <$> sub (heardFrom tab) them.hear
+  | (tab, Playing session) <- state.openTabs
+  , Just them <- [listening session]
+  ]
+
+-- | The name the stream of one tab runs under.
+heardFrom :: TabId -> Text
+heardFrom tab = "heard " <> keyOf tab
 
 -- | The name the tab bar finds the tab view by.
 viewName :: Text
@@ -425,7 +443,7 @@ detailOf (Playing session) = aboutGame session
 
 -- | Where a game stands.
 stateOf :: Session -> Text
-stateOf session = case session.opponent of
+stateOf session = case session.standing of
   Starting -> "Starting\8230"
   Gone _   -> "Stopped"
   _ | finished game    -> ending session
@@ -447,7 +465,7 @@ ending session = case winnerByResignation session.game of
 -- there: an engine that is gone, a score at the end, or a point the
 -- rules would not take a stone on.
 aboutGame :: Session -> Text
-aboutGame session = case session.opponent of
+aboutGame session = case session.standing of
   Gone why -> why
   _        -> case session.note of
     Just (Result  out ) -> "Result: " <> out
@@ -514,10 +532,11 @@ board tab session = toEvent <$> goban
 application
   :: Opponents -> Setup -> App Adw.ApplicationWindow State Event
 application opponents opening = defaultApp
-  { update       = update'
-  , view         = view'
-  , initialState = startingState opponents opening
+  { update        = update'
+  , view          = view'
+  , subscriptions = listeners
+  , initialState  = startingState opponents opening
     -- The one event the window sends itself, which puts the first tab
     -- up. That tab opens on a page and starts nothing.
-  , inputs       = [Pipes.yield NewTabPressed]
+  , inputs        = [Pipes.yield NewTabPressed]
   }

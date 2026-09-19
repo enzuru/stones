@@ -23,7 +23,7 @@ import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import           Hedgehog
 
-import qualified Stones.Engine.Gtp             as Gtp
+import qualified Stones.Opponent.Gtp             as Gtp
 
 -- | An engine that answers every command with these lines, over and
 -- over, and a blank line after each answer.

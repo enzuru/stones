@@ -2,25 +2,25 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NoFieldSelectors      #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE OverloadedStrings     #-}
 
--- | One game, and what each thing the player does turns it into.
+-- | One game, and what each thing that happens turns it into.
 --
 -- A window holds several of these, one per tab, each with an opponent
 -- of its own. Nothing here knows about tabs or about widgets: a step
 -- takes a game and an event and answers with the game as it now
--- stands, and with what to ask the opponent, if anything. The window
--- is what runs the asking and hands the answer back.
+-- stands, and with what to say to the opponent, if anything. The
+-- window is what says it, and what carries back whatever arrives.
 module Stones.Session
   ( Session(..)
-  , Opponent(..)
+  , Standing(..)
   , Note(..)
+  , Chat(..)
   , SessionEvent(..)
-  , Reply(..)
-  , Played
+  , Step
   , starting
   , opened
   , couldNotOpen
@@ -28,6 +28,7 @@ module Stones.Session
   , ready
   , playable
   , canUndo
+  , listening
   , opponentOf
   , sessionSize
   )
@@ -36,78 +37,72 @@ where
 import           Data.Maybe                     ( isJust )
 import           Data.Text                      ( Text )
 
-import           Go.Game
-import           Go.Types
-import           GI.Gtk.Declarative.App.Simple   ( Transition(..)
+import           GI.Gtk.Declarative.App.Simple  ( Transition(..)
                                                 , none
                                                 , perform
                                                 )
-
-import           Stones.Engine
+import           Go.Game
+import           Go.Types
+import           Stones.Opponent
 
 -- | Where a game's opponent is up to.
 --
--- The four states are what the window has to tell apart, and a game is
--- in exactly one of them. Saying the same thing with a handful of
--- flags would let a game be starting and broken at once, which is not
--- a thing that can happen and which the window would then have to have
--- an opinion about.
-data Opponent
+-- Three states, and a game is in exactly one of them. Whose turn it is
+-- is not one of them, because the game already knows that, and two
+-- places that both claim to know it are two places that can disagree.
+data Standing
   = Starting
-    -- ^ A program is being started for this game. Nothing can be
-    -- played until it is.
-  | Idle Engine
-    -- ^ It is there, and nothing has been asked of it.
-  | Waiting Engine
-    -- ^ It has been asked something and has not answered yet.
+    -- ^ One is being found for this game. Nothing can be played until
+    -- there is.
+  | Here Opponent
+    -- ^ There is one, and the game is on.
   | Gone Text
     -- ^ It failed, and this is what to tell the player. A game whose
     -- opponent is gone takes no more moves.
+
+-- | Something somebody said about this game.
+data Chat = Chat
+  { who  :: Text
+  , what :: Text
+  }
+  deriving (Eq, Show)
 
 -- | One game of a window.
 data Session = Session
   { game     :: Game
     -- ^ The position, and whose turn it is.
-  , opponent :: Opponent
+  , standing :: Standing
   , human    :: Color
     -- ^ The colour the player at this window has in this game.
   , note     :: Maybe Note
     -- ^ Something to say about this game, if there is anything.
+  , said     :: [Chat]
+    -- ^ What has been said about it, oldest first.
   }
 
 -- | What the window has to say about a game beyond whose turn it is.
 --
 -- Everything else it shows is worked out from the game and from its
--- opponent: that the engine is thinking, that the game is over, that
--- the engine is gone and why. These two are what would otherwise have
--- nowhere to live, because neither is written anywhere on the board.
+-- opponent: that the opponent is thinking, that the game is over, that
+-- it is gone and why. These two are what would otherwise have nowhere
+-- to live, because neither is written anywhere on the board.
 data Note
   = Refused Illegal
     -- ^ The last click was not a move the rules allow.
   | Result Text
-    -- ^ What the opponent made the score, once the game had ended.
+    -- ^ What the game came to, once it had ended.
   deriving (Eq, Show)
 
--- | What the player does to a game.
+-- | What happens to a game.
 data SessionEvent
   = Clicked Coord
   | Passed
   | ResignPressed
   | UndoPressed
-  | Answered Reply
-    -- ^ The opponent answered what it was last asked.
-  deriving (Show)
-
--- | What an opponent answered.
-data Reply
-  = Moved Move
-    -- ^ It played this.
-  | Ready
-    -- ^ It did as it was told and has nothing to say.
-  | Scored Text
-    -- ^ This is what it makes the score.
-  | Failed Text
-    -- ^ It could not do as it was told.
+  | Says Text
+    -- ^ The player wrote something to say.
+  | Arrived Heard
+    -- ^ Something came from the other side.
   deriving (Show)
 
 -- | Where a game goes when something happens to it.
@@ -116,34 +111,29 @@ data Reply
 -- own, which the window lifts into one of its own with 'bimap'. The
 -- 'GI.Gtk.Declarative.App.Simple.Exit' case belongs to the window: a
 -- game never ends the program, and nothing here answers with it.
-type Played = Transition Session SessionEvent
+type Step = Transition Session SessionEvent
 
--- | A game on a board this wide, waiting for an opponent to be
--- started for it.
+-- | A game on a board this wide, waiting for an opponent.
 starting :: Color -> Int -> Session
 starting human n = Session { game     = newGame n
-                           , opponent = Starting
+                           , standing = Starting
                            , human    = human
                            , note     = Nothing
+                           , said     = []
                            }
 
--- | The opponent this game was waiting for has started.
+-- | The opponent this game was waiting for is here.
 --
--- A player with White has the opponent open the game, so the first
--- thing that happens to this game is a question rather than a click.
-opened :: Engine -> Session -> Played
-opened engine session
-  | game.turn == session.human = stay
-    session { opponent = Idle engine }
-  | otherwise = asking
-    session
-    engine
-    (either Failed Moved <$> engine.genMove game.turn)
-  where game = session.game
+-- A player with White has the other side open the game, so the first
+-- thing that happens is something said rather than something clicked.
+opened :: Opponent -> Session -> Step
+opened them session
+  | session.game.turn == session.human = stay session { standing = Here them }
+  | otherwise = telling session { standing = Here them } them [Asked]
 
--- | No opponent could be started for this game.
+-- | No opponent could be found for this game.
 couldNotOpen :: Text -> Session -> Session
-couldNotOpen why session = session { opponent = Gone why }
+couldNotOpen why session = session { standing = Gone why }
 
 -- | The width of the board this game is played on.
 sessionSize :: Session -> Int
@@ -151,154 +141,179 @@ sessionSize session = boardSize session.game
 
 -- | What to call this game's opponent.
 opponentOf :: Session -> Text
-opponentOf session = case session.opponent of
-  Starting  -> "starting"
-  Idle    e -> e.name
-  Waiting e -> e.name
-  Gone    _ -> "no engine"
+opponentOf session = case session.standing of
+  Starting -> "starting"
+  Here it  -> it.name
+  Gone _   -> "nobody"
 
--- | The opponent to send a move to, if the player can move right now.
+-- | The opponent of a game that is still listening, which is the one
+-- the window keeps a subscription open for.
 --
--- Answering with the engine rather than with a yes or a no is what
+-- A game that never started and a game whose opponent is gone have
+-- nothing to listen to.
+listening :: Session -> Maybe Opponent
+listening session = case session.standing of
+  Here it -> Just it
+  _       -> Nothing
+
+-- | The opponent to say a move to, if the player can move right now.
+--
+-- Answering with the opponent rather than with a yes or a no is what
 -- lets the moves below be written without a branch for the case where
--- the player may move and there is nothing to move against.
-ready :: Session -> Maybe Engine
-ready session = case session.opponent of
-  Idle engine
-    | not (finished game), game.turn == session.human -> Just engine
+-- the player may move and there is nobody to move against.
+ready :: Session -> Maybe Opponent
+ready session = case session.standing of
+  Here it | not (finished game), game.turn == session.human -> Just it
   _ -> Nothing
   where game = session.game
 
--- | Can the player move in this game? This is 'ready' with the
--- opponent left out, for the window, which only wants to know whether
--- a button is live.
+-- | Can the player move in this game?
 playable :: Session -> Bool
 playable = isJust . ready
 
--- | Is there anything to take back, and is the opponent free to be
+-- | Is there anything to take back, and is the opponent there to be
 -- told about it?
 canUndo :: Session -> Bool
-canUndo session = case session.opponent of
-  Idle _ -> isJust (rewind session.human session.game)
+canUndo session = case session.standing of
+  Here _ -> isJust (rewind session.human session.game)
   _      -> False
 
 -- * Stepping
 -------------
 
 -- | What one event does to a game.
-step :: Session -> SessionEvent -> Played
+step :: Session -> SessionEvent -> Step
 step session = \case
-  Clicked coord  -> humanMove session (Play coord)
-  Passed         -> humanMove session Pass
-  ResignPressed  -> resign session
-  UndoPressed    -> takeBack session
-  Answered reply -> answered session reply
+  Clicked coord -> humanMove session (Play coord)
+  Passed        -> humanMove session Pass
+  ResignPressed -> resign session
+  UndoPressed   -> takeBack session
+  Says text     -> says session text
+  Arrived heard -> arrived session heard
 
--- | The game stands here, and nothing is asked of anybody.
-stay :: Session -> Played
+-- | The game stands here, and nothing is said to anybody.
+stay :: Session -> Step
 stay session = Transition session none
 
--- | The game stands here, and the opponent has been asked this.
+-- | The game stands here, and these things are being said to the
+-- opponent, in this order.
 --
 -- Anything the window had to say is cleared: a refusal is about the
 -- click before this one, and a score is about a game that has ended,
 -- which is not a game anybody is being asked to move in.
 --
 -- The job runs under no name. A named job stops whatever is running
--- under that name, and what is asked here is several lines of
--- protocol: one stopped between two of them would leave the answer to
--- the first sitting in the pipe, to be read as the answer to whatever
--- was asked next. Nothing here needs 'qualifying' for the same reason,
--- even though a window holds several of these at once.
-asking :: Session -> Engine -> IO Reply -> Played
-asking session engine job = Transition
-  session { opponent = Waiting engine, note = Nothing }
-  (perform (Just . Answered <$> job))
+-- under that name, and what is said here is several lines of protocol:
+-- one stopped between two of them would leave the answer to the first
+-- sitting in the pipe, to be read as the answer to whatever was said
+-- next.
+telling :: Session -> Opponent -> [Told] -> Step
+telling session them things =
+  Transition session { note = Nothing } (perform (saying them things))
 
--- | The player's own move.
-humanMove :: Session -> Move -> Played
+-- | Say each of these, and stop at the first that will not be said.
+--
+-- A thing that will not be said is the opponent going, because there
+-- is nothing else it can be: the game here has already moved on, and
+-- an opponent that did not hear about it is one this program can no
+-- longer play against.
+saying :: Opponent -> [Told] -> IO (Maybe SessionEvent)
+saying them = go
+ where
+  go []             = pure Nothing
+  go (this : after) = them.tell this >>= \case
+    Left  why -> pure (Just (Arrived (Lost why)))
+    Right ()  -> go after
+
+-- | The player's own move, which goes down here first and is said
+-- afterwards.
+humanMove :: Session -> Move -> Step
 humanMove session move = case ready session of
-  Nothing     -> stay session
-  Just engine -> case playMove human move session.game of
-    Left reason -> stay session { note = Just (Refused reason) }
+  Nothing   -> stay session
+  Just them -> case playMove session.human move session.game of
+    Left  reason -> stay session { note = Just (Refused reason) }
     Right game
-      | finished game -> asking session { game = game }
-                                engine
-                                (tellThenScore engine human move)
-      | otherwise -> asking session { game = game }
-                            engine
-                            (tellThenMove engine human move)
-  where human = session.human
+      | finished game -> telling session { game = game } them [Moved move, Counting]
+      | otherwise     -> telling session { game = game } them [Moved move, Asked]
 
 -- | Giving the game up, which ends it where it stands.
---
--- There is nothing to tell the opponent: the protocol has no command
--- for a resignation, and there is no next move to ask for.
-resign :: Session -> Played
+resign :: Session -> Step
 resign session = case ready session of
-  Nothing     -> stay session
-  Just engine -> case playMove human Resign session.game of
+  Nothing   -> stay session
+  Just them -> case playMove session.human Resign session.game of
     Left  _    -> stay session
-    Right game -> stay session { game     = game
-                               , opponent = Idle engine
-                               , note     = Nothing
-                               }
-  where human = session.human
+    Right game -> telling session { game = game } them [Resigned]
 
--- | Take back moves until it is the player's turn again, on this
--- board and on the opponent's.
+-- | Something to say to whoever is listening.
+--
+-- It is not written down here. What was said is what comes back, so a
+-- game shows the same words whether this program or the other side put
+-- them there, and shows them in the order everybody else sees.
+says :: Session -> Text -> Step
+says session text = case session.standing of
+  Here it -> Transition session (perform (saying it [Said text]))
+  _       -> stay session
+
+-- | Take back moves until it is the player's turn again, here and on
+-- the other side.
 --
 -- One move is not enough: taking back only the opponent's answer would
 -- leave the player looking at their own move with the opponent about
 -- to answer it again. Two is the usual number, and one is what is
 -- there to take back when the opponent opened the game.
-takeBack :: Session -> Played
-takeBack session = case session.opponent of
-  Idle engine -> case rewind human session.game of
+takeBack :: Session -> Step
+takeBack session = case session.standing of
+  Here them -> case rewind session.human session.game of
     Nothing            -> stay session
-    Just (count, game) -> asking session { game = game }
-                                 engine
-                                 (undoThen engine count game.turn human)
-  _ -> stay session
-  where human = session.human
-
--- | What the opponent answered.
-answered :: Session -> Reply -> Played
-answered session reply = case session.opponent of
-  -- An answer with nobody waiting for it belongs to a game that has
-  -- moved on since the question, so there is nothing to do with it.
-  Waiting engine -> case reply of
-    Moved move -> opponentMove session engine move
-    Ready      -> stay (freed engine session)
-    Scored out -> stay (freed engine session) { note = Just (Result out) }
-    Failed why -> stay session { opponent = Gone why }
+    Just (count, game) -> telling session { game = game } them
+      (TookBack count : [ Asked | game.turn /= session.human ])
   _ -> stay session
 
--- | The opponent has answered and is free again.
-freed :: Engine -> Session -> Session
-freed engine session = session { opponent = Idle engine }
+-- * What arrives
+-----------------
 
--- | The opponent's move, which is played on this board too.
-opponentMove :: Session -> Engine -> Move -> Played
-opponentMove session engine move = case move of
-  Resign -> stay (freed engine session { game = resigned })
-  _      -> case playMove them move session.game of
-    -- The opponent has answered with something this program's rules do
-    -- not allow, which means the two boards have drifted apart. Saying
-    -- so is the only honest thing left to do.
-    Left reason -> stay session { opponent = Gone (disagreement reason) }
+-- | Something came from the other side.
+arrived :: Session -> Heard -> Step
+arrived session = \case
+  Played color move -> theirMove session color move
+  Spoke person text ->
+    stay session { said = session.said <> [Chat person text] }
+  Undid count       -> tookBack session count
+  Counted out       -> stay session { note = Just (Result out) }
+  Lost why          -> stay session { standing = Gone why }
+
+-- | A move arrived. It is played here if it is the move this board is
+-- waiting for, and dropped if it is not.
+--
+-- A server says every move, this program's own included, so the same
+-- move arrives after it has already gone down here. The colour is what
+-- tells the two apart: a move that has been played here already is one
+-- whose colour is no longer the colour to play.
+theirMove :: Session -> Color -> Move -> Step
+theirMove session color move
+  | finished session.game = stay session
+  | color /= session.game.turn = stay session
+  | otherwise = case playMove color move session.game of
+    -- What arrived is something this program's rules do not allow,
+    -- which means the two boards have drifted apart. Saying so is the
+    -- only honest thing left to do.
+    Left reason -> stay session { standing = Gone (disagreement reason) }
     Right game
-      | finished game -> asking session { game = game }
-                                engine
-                                (askScore engine)
-      | otherwise     -> stay (freed engine session { game = game })
+      | finished game, Just them <- listening session ->
+        telling session { game = game } them [Counting]
+      | otherwise -> stay session { game = game }
  where
-  them = opposite session.human
   disagreement reason =
-    "The engine and the board disagree: " <> describeIllegal reason
-  resigned = case playMove them Resign session.game of
-    Right game -> game
-    Left  _    -> session.game
+    "The other side and the board disagree: " <> describeIllegal reason
+
+-- | Moves came off over there, so they come off here as well.
+tookBack :: Session -> Int -> Step
+tookBack session count
+  | count <= 0 = stay session
+  | otherwise  = stay session { game = wind count session.game }
+ where
+  wind 0 game = game
+  wind n game = maybe game (wind (n - 1)) (undoMove game)
 
 -- | How far back to go, and where that lands, taking at most two moves
 -- off.
@@ -311,32 +326,3 @@ rewind human = go 0
     | otherwise = case undoMove game of
       Nothing     -> if taken > 0 then Just (taken, game) else Nothing
       Just before -> go (taken + 1) before
-
--- * What gets asked of an opponent
------------------------------------
-
--- | Tell it what was played, then ask it for its own move.
-tellThenMove :: Engine -> Color -> Move -> IO Reply
-tellThenMove engine human move = engine.notify human move >>= \case
-  Left  why -> pure (Failed why)
-  Right ()  -> either Failed Moved <$> engine.genMove (opposite human)
-
--- | Tell it what was played, then ask it what the score is. This is
--- the second pass of a game that has just ended.
-tellThenScore :: Engine -> Color -> Move -> IO Reply
-tellThenScore engine human move = engine.notify human move >>= \case
-  Left  why -> pure (Failed why)
-  Right ()  -> askScore engine
-
--- | Ask it what the score is.
-askScore :: Engine -> IO Reply
-askScore engine = either Failed Scored <$> engine.score
-
--- | Take it back this many moves, and ask it to move if the board it
--- is left with is one where it has the turn.
-undoThen :: Engine -> Int -> Color -> Color -> IO Reply
-undoThen engine count turn human = engine.undo count >>= \case
-  Left why -> pure (Failed why)
-  Right ()
-    | turn == human -> pure Ready
-    | otherwise     -> either Failed Moved <$> engine.genMove turn

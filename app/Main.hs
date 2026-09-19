@@ -40,14 +40,14 @@ import           Go.Types
 import qualified Stones.App                    as Stones
 import           Stones.Files                   ( dataFile )
 import qualified Stones.Menu                   as Menu
-import           Stones.Engine                  ( Strength
+import           Stones.Setup                   ( Strength
                                                 , describeStrength
                                                 , strengths
                                                 )
 import           Stones.Setup                   ( Setup(..)
                                                 , defaultSetup
                                                 )
-import qualified Stones.Engine.GnuGo           as GnuGo
+import qualified Stones.Opponent.GnuGo         as GnuGo
 
 -- | What the command line asked for.
 --
@@ -147,7 +147,7 @@ main = do
   -- page a tab opens on, so an engine that is not there would show up
   -- as a game that never starts, a long way from here. Trying one now
   -- turns that into a line on the terminal and an exit code.
-  working <- GnuGo.probe chosen.program GnuGo.defaultLevel
+  working <- GnuGo.probe chosen.program chosen.opening
   -- The menu is markup in a file beside the program, and a window
   -- whose menu is missing is a window with no way to start a game.
   menu    <- dataFile Menu.menuFile

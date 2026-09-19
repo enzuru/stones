@@ -20,6 +20,9 @@
 -- and it is not worth one until somebody has asked for a game.
 module Stones.Setup
   ( Setup(..)
+  , Strength(..)
+  , strengths
+  , describeStrength
   , SetupEvent(..)
   , defaultSetup
   , boardWidths
@@ -50,10 +53,29 @@ import           GI.Gtk.Declarative.Adwaita.ToggleGroup
                                                 )
 
 import           Go.Types
-import           Stones.Engine                  ( Strength(..)
-                                                , describeStrength
-                                                , strengths
-                                                )
+
+-- | How hard an opponent is asked to try.
+--
+-- Three of them. A program that plays this well has ten steps to offer
+-- and a menu of ten numbers is a menu nobody reads, so what the player
+-- picks from is three words and what they mean is the program's
+-- business.
+data Strength
+  = Gentle
+  | Fair
+  | Fierce
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
+-- | Every strength, easiest first, which is the order a menu shows
+-- them in.
+strengths :: [Strength]
+strengths = [minBound .. maxBound]
+
+-- | What to call one in the window.
+describeStrength :: Strength -> Text
+describeStrength Gentle = "Gentle"
+describeStrength Fair   = "Fair"
+describeStrength Fierce = "Fierce"
 
 -- | What a game will be started with.
 data Setup = Setup

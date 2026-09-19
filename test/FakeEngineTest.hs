@@ -7,7 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
--- | "Stones.Engine.GnuGo" against an engine that is not GNU Go.
+-- | "Stones.Opponent.GnuGo" against an engine that is not GNU Go.
 --
 -- The engine is a shell script, so it can be made to refuse a command,
 -- to answer with something that is not a move, or not to be there at
@@ -29,8 +29,14 @@ import           System.IO                      ( hClose
                                                 )
 
 import           Go.Types
-import           Stones.Engine
-import qualified Stones.Engine.GnuGo           as GnuGo
+import           Pipes                           ( (>->) )
+import qualified Pipes.Prelude                 as Pipes
+
+import           Stones.Opponent
+import           Stones.Setup                   ( Setup(..)
+                                                , Strength(..)
+                                                )
+import qualified Stones.Opponent.GnuGo           as GnuGo
 
 -- | Write a shell script that behaves like an engine, and run
 -- something with the path to it.
@@ -76,12 +82,12 @@ babbling = "while read -r line; do printf '= nonsense\\n\\n'; done"
 
 prop_anEngineThatIsNotThereIsReported :: Property
 prop_anEngineThatIsNotThereIsReported = withTests 1 . property $ do
-  opened <- evalIO (GnuGo.open "/nonexistent-engine" GnuGo.defaultLevel 9)
+  opened <- evalIO (GnuGo.open "/nonexistent-engine" (board 9))
   case opened of
     Right _  -> annotate "it started something" >> failure
     Left why -> do
       assert (Text.isPrefixOf "Could not start /nonexistent-engine" why)
-  probed <- evalIO (GnuGo.probe "/nonexistent-engine" GnuGo.defaultLevel)
+  probed <- evalIO (GnuGo.probe "/nonexistent-engine" (board 9))
   case probed of
     Right () -> annotate "it found something" >> failure
     Left _   -> success
@@ -90,7 +96,7 @@ prop_anEngineThatRefusesTheFirstCommandDoesNotStart :: Property
 prop_anEngineThatRefusesTheFirstCommandDoesNotStart =
   withTests 1 . property $ do
     opened <- evalIO . withEngineNamed "refusing" refusing $ \path ->
-      GnuGo.open path (GnuGo.Level 1) 9
+      GnuGo.open path (board 9)
     case opened of
       Right _  -> annotate "it started" >> failure
       Left why -> assert (Text.isInfixOf "not today" why)
@@ -98,45 +104,49 @@ prop_anEngineThatRefusesTheFirstCommandDoesNotStart =
 prop_anObligingEngineCanBePlayedAgainst :: Property
 prop_anObligingEngineCanBePlayedAgainst = withTests 1 . property $ do
   answers <- evalIO . withEngineNamed "obliging" obliging $ \path ->
-    GnuGo.open path (GnuGo.Level 3) 9 >>= \case
+    GnuGo.open path (board 9) >>= \case
       Left  why    -> pure (Left why)
-      Right engine -> do
-        name    <- pure engine.name
-        fresh   <- engine.newGame 13
-        told    <- engine.notify Black (Play (Coord 3 3))
-        passed  <- engine.notify White Pass
-        moved   <- engine.genMove White
-        nothing <- engine.undo 0
-        back    <- engine.undo 2
-        scored  <- engine.score
-        engine.close
-        pure (Right (name, fresh, told, passed, moved, nothing, back, scored))
+      Right them -> do
+        told    <- them.tell (Moved (Play (Coord 3 3)))
+        passed  <- them.tell (Moved Pass)
+        moved   <- asking them Asked
+        nothing <- them.tell (TookBack 0)
+        back    <- them.tell (TookBack 2)
+        scored  <- asking them Counting
+        quiet   <- them.tell (Said "hello")
+        them.leave
+        pure (Right (them.name, told, passed, moved, nothing, back, scored, quiet))
   case answers of
     Left why -> annotate (Text.unpack why) >> failure
-    Right (name, fresh, told, passed, moved, nothing, back, scored) -> do
+    Right (name, told, passed, moved, nothing, back, scored, quiet) -> do
       name === "GNU Go"
-      fresh === Right ()
       told === Right ()
       passed === Right ()
-      -- D4 on a 13x13 board, counted from the top.
-      moved === Right (Play (Coord 3 9))
+      -- D4 on a 9x9 board, counted from the top. The player is Black
+      -- here, so Asked asks White, and that is the colour it comes
+      -- back under.
+      moved === Right [Played White (Play (Coord 3 5))]
       nothing === Right ()
       back === Right ()
-      scored === Right "B+2.5"
+      scored === Right [Counted "B+2.5"]
+      -- GNU Go has nobody to say it to, and takes it without a word.
+      quiet === Right ()
 
 prop_anEngineThatAnswersWithNonsenseIsReported :: Property
 prop_anEngineThatAnswersWithNonsenseIsReported = withTests 1 . property $ do
   answer <- evalIO . withEngineNamed "babbling" babbling $ \path ->
-    GnuGo.open path (GnuGo.Level 1) 9 >>= \case
+    GnuGo.open path (board 9) >>= \case
       Left  why    -> pure (Left why)
-      Right engine -> do
-        moved <- engine.genMove White
-        engine.close
+      Right them -> do
+        moved <- asking them Asked
+        them.leave
         pure (Right moved)
+  -- A move it cannot read is not a refusal. It is the other side
+  -- going, because there is nothing else it can be.
   case answer of
-    Right (Left why) ->
+    Right (Right [Lost why]) ->
       why === "The engine answered with \"nonsense\"."
-    other -> annotateShow (fmap (fmap (const ())) other) >> failure
+    other -> annotateShow (fmap (const ()) other) >> failure
 
 prop_anEngineThatGoesAwayMidGameIsReported :: Property
 prop_anEngineThatGoesAwayMidGameIsReported = withTests 1 . property $ do
@@ -147,15 +157,18 @@ prop_anEngineThatGoesAwayMidGameIsReported = withTests 1 . property $ do
         , "exit 0"
         ]
   answer <- evalIO . withEngineNamed "brief" brief $ \path ->
-    GnuGo.open path (GnuGo.Level 1) 9 >>= \case
+    GnuGo.open path (board 9) >>= \case
       Left  why    -> pure (Left why)
-      Right engine -> do
-        moved <- engine.genMove Black
-        engine.close
+      Right them -> do
+        moved <- asking them Asked
+        them.leave
         pure (Right moved)
+  -- A pipe that closes is not a refusal either. It is the other side
+  -- going, and it arrives the same way a refused move does.
   case answer of
-    Right (Left why) -> assert (Text.isPrefixOf "Lost the engine" why)
-    other            -> annotateShow (fmap (fmap (const ())) other) >> failure
+    Right (Right [Lost why]) ->
+      assert (Text.isPrefixOf "Lost the engine" why)
+    other -> annotateShow (fmap (const ()) other) >> failure
 
 prop_severalOpponentsAtOnceAndAllOfThemStopped :: Property
 prop_severalOpponentsAtOnceAndAllOfThemStopped = withTests 1 . property $ do
@@ -163,9 +176,9 @@ prop_severalOpponentsAtOnceAndAllOfThemStopped = withTests 1 . property $ do
   -- running when the window closes is stopped with it.
   answers <- evalIO . withEngineNamed "several" obliging $ \path ->
     GnuGo.withGnuGo path $ \opponents -> do
-      one   <- opponents.open 9 Fierce
-      two   <- opponents.open 13 Fierce
-      three <- opponents.open 19 Fierce
+      one   <- opponents.open (board 9)
+      two   <- opponents.open (board 13)
+      three <- opponents.open (board 19)
       -- One of them is let go by hand, the way a tab closing does it.
       case one of
         Right engine -> opponents.close engine
@@ -173,7 +186,7 @@ prop_severalOpponentsAtOnceAndAllOfThemStopped = withTests 1 . property $ do
       pure (map named [one, two, three])
   answers === [Just "GNU Go", Just "GNU Go", Just "GNU Go"]
  where
-  named :: Either Text Engine -> Maybe Text
+  named :: Either Text Opponent -> Maybe Text
   named (Right engine) = Just engine.name
   named (Left  _     ) = Nothing
 
@@ -190,3 +203,15 @@ _unused = ""
 
 tests :: Group
 tests = $$(discover)
+
+-- | A game on a board this wide, as Black against an opponent that is
+-- trying.
+board :: Int -> Setup
+board n = Setup { size = n, human = Black, strength = Fierce }
+
+-- | Say one thing to an opponent, then read what came back off its
+-- stream.
+asking :: Opponent -> Told -> IO (Either Text [Heard])
+asking them this = them.tell this >>= \said -> case said of
+  Left  why -> pure (Left why)
+  Right ()  -> Right <$> Pipes.toListM (them.hear >-> Pipes.take 1)

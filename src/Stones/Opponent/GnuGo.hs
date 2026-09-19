@@ -2,17 +2,19 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NoFieldSelectors      #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE OverloadedStrings     #-}
 
 -- | GNU Go as an opponent.
 --
--- GNU Go speaks the Go Text Protocol when it is started with
--- @--mode gtp@, so this is "Stones.Engine.Gtp" with the commands of a
--- game written out and the answers read back as moves.
-module Stones.Engine.GnuGo
+-- GNU Go answers when it is asked and says nothing otherwise, so
+-- everything it says is something this program asked for. It is given
+-- a stream of its own even so, and puts its answers on that rather
+-- than handing them back, because that is where a game on a server
+-- would put them. The window above cannot tell the two apart.
+module Stones.Opponent.GnuGo
   ( Level(..)
   , defaultLevel
   , levelRange
@@ -23,6 +25,7 @@ module Stones.Engine.GnuGo
   )
 where
 
+import           Control.Concurrent.STM         ( atomically )
 import           Control.Exception              ( SomeException
                                                 , bracket
                                                 , try
@@ -31,11 +34,20 @@ import           Data.Foldable                  ( for_ )
 import           Data.IORef
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
+import           Pipes.Concurrent               ( Output
+                                                , fromInput
+                                                , send
+                                                , spawn'
+                                                , unbounded
+                                                )
 
 import           Go.Types
 import           Go.Vertex
-import           Stones.Engine
-import qualified Stones.Engine.Gtp             as Gtp
+import           Stones.Opponent
+import qualified Stones.Opponent.Gtp           as Gtp
+import           Stones.Setup                   ( Setup(..)
+                                                , Strength(..)
+                                                )
 
 -- | How hard GNU Go thinks. Its own range is 1 to 10, and 10 is what
 -- it plays at when nothing is said.
@@ -59,13 +71,13 @@ levelFor Gentle = Level 1
 levelFor Fair   = Level 5
 levelFor Fierce = defaultLevel
 
--- | Start GNU Go and hand back an opponent that talks to it.
+-- | Start GNU Go, and hand back an opponent that talks to it.
 --
 -- The board size is remembered here, because a vertex cannot be read
 -- without it: @A1@ is the bottom left corner of whatever board is in
 -- play, and the row number is counted from the bottom.
-open :: FilePath -> Level -> Int -> IO (Either Text Engine)
-open program (Level level) initialSize = do
+open :: FilePath -> Setup -> IO (Either Text Opponent)
+open program setup = do
   started <- try (Gtp.start program arguments)
   case started of
     Left failure -> pure
@@ -77,22 +89,50 @@ open program (Level level) initialSize = do
         )
       )
     Right gtp -> do
-      current <- newIORef initialSize
-      let engine = Engine { name    = "GNU Go"
-                          , newGame = newGame gtp current
-                          , notify  = notify gtp current
-                          , genMove = genMove gtp current
-                          , undo    = undo gtp
-                          , score   = score gtp
-                          , close   = Gtp.stop gtp
-                          }
-      setUp <- newGame gtp current initialSize
+      current             <- newIORef setup.size
+      -- Unbounded, because the only writer is whoever is telling this
+      -- opponent something, and a write that blocked would block the
+      -- window's own job.
+      (output, input, seal) <- spawn' unbounded
+      let opponent = Opponent
+            { name  = "GNU Go"
+            , tell  = telling gtp current output setup.human
+            , hear  = fromInput input
+            , leave = Gtp.stop gtp >> atomically seal
+            }
+      setUp <- newGame gtp current setup.size
       pure $ case setUp of
-        Left failure -> Left failure
-        Right ()     -> Right engine
+        Left  failure -> Left failure
+        Right ()      -> Right opponent
  where
-  arguments =
-    ["--mode", "gtp", "--level", show level]
+  Level level = levelFor setup.strength
+  arguments   = ["--mode", "gtp", "--level", show level]
+
+-- | Say one thing to GNU Go.
+--
+-- What comes back goes on the stream rather than into the answer. The
+-- answer says whether the thing was said, which is a different
+-- question: a move it will not take is a refusal, and a move it will
+-- not make is news that arrives later.
+telling
+  :: Gtp.Gtp -> IORef Int -> Output Heard -> Color -> Told -> IO (Either Text ())
+telling gtp current output human = \case
+  Moved move -> notify gtp current human move
+  TookBack n -> undo gtp n
+  Asked      -> genMove gtp current them
+    >>= put output . either Lost (Played them)
+  Counting   -> score gtp >>= put output . either Lost Counted
+  -- The protocol has no word for either of these. A resignation ends
+  -- the game here and there is nothing left to ask GNU Go for, and
+  -- GNU Go has nothing to say and nobody to say it to.
+  Resigned   -> pure (Right ())
+  Said _     -> pure (Right ())
+  where them = opposite human
+
+-- | Put something on the stream. A stream nobody is reading from any
+-- more takes nothing, which is what a closed game looks like.
+put :: Output Heard -> Heard -> IO (Either Text ())
+put output heard = Right () <$ atomically (send output heard)
 
 -- | Turn a failed command into the line the window shows.
 report :: IO (Either Gtp.GtpError a) -> IO (Either Text a)
@@ -162,10 +202,10 @@ colorName White = "white"
 -- This is what turns that into a line on the terminal and an exit
 -- code, which is what somebody running the program from a script
 -- wants.
-probe :: FilePath -> Level -> IO (Either Text ())
-probe program level = open program level 9 >>= \case
-  Left  why    -> pure (Left why)
-  Right engine -> Right () <$ engine.close
+probe :: FilePath -> Setup -> IO (Either Text ())
+probe program setup = open program setup >>= \case
+  Left  why      -> pure (Left why)
+  Right opponent -> Right () <$ opponent.leave
 
 -- | Opponents that are GNU Go processes, for as long as this action
 -- runs.
@@ -176,13 +216,13 @@ probe program level = open program level 9 >>= \case
 -- never left behind and never waited on twice.
 withGnuGo :: FilePath -> (Opponents -> IO a) -> IO a
 withGnuGo program use = bracket (newIORef []) stopEveryone $ \running ->
-  use Opponents { open = openOne running, close = (.close) }
+  use Opponents { open = openOne running, close = (.leave) }
  where
-  openOne running n strength = open program (levelFor strength) n >>= \case
-    Left  why    -> pure (Left why)
-    Right engine -> Right engine <$ modifyIORef' running (engine :)
+  openOne running setup = open program setup >>= \case
+    Left  why      -> pure (Left why)
+    Right opponent -> Right opponent <$ modifyIORef' running (opponent :)
 
-  stopEveryone :: IORef [Engine] -> IO ()
+  stopEveryone :: IORef [Opponent] -> IO ()
   stopEveryone running = do
     started <- readIORef running
-    for_ started (.close)
+    for_ started (.leave)

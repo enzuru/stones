@@ -17,7 +17,7 @@ import qualified Hedgehog.Gen                  as Gen
 import qualified Hedgehog.Range                as Range
 
 import           Go.Types
-import           Stones.Engine
+import           Stones.Opponent
 import           Stones.Setup
 
 -- | Any of the choices the page offers.

@@ -31,24 +31,21 @@ import           Hedgehog
 
 import           Go.Types
 import           Stones.App
-import           Stones.Engine
+import           Stones.Opponent
 import           Stones.Session
 import           Stones.Setup
 import           WidgetUtils
 
 -- | An opponent that does nothing and says so.
-silent :: Engine
-silent = Engine { name    = "nobody"
-                , newGame = \_ -> pure (Right ())
-                , notify  = \_ _ -> pure (Right ())
-                , genMove = \_ -> pure (Right Pass)
-                , undo    = \_ -> pure (Right ())
-                , score   = pure (Right "0")
-                , close   = pure ()
-                }
+silent :: Opponent
+silent = Opponent { name  = "nobody"
+                  , tell  = \_ -> pure (Right ())
+                  , hear  = pure ()
+                  , leave = pure ()
+                  }
 
 source :: Opponents
-source = Opponents { open  = \_ _ -> pure (Right silent)
+source = Opponents { open  = \_ -> pure (Right silent)
                    , close = \_ -> pure ()
                    }
 
@@ -163,8 +160,8 @@ prop_aWindowCanBeListenedToAndLetGo :: Property
 prop_aWindowCanBeListenedToAndLetGo = withTests 1 . property $ do
   evalIO . runUI $ do
     made      <- create (view' twoGames)
-    listening <- subscribe (view' twoGames) made (const (pure ()))
-    cancel listening
+    watching <- subscribe (view' twoGames) made (const (pure ()))
+    cancel watching
   success
 
 prop_aTabOnItsPageShowsThePage :: Property
