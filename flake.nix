@@ -29,6 +29,12 @@
         async stm safe-exceptions
         pipes pipes-concurrency pipes-extras
         process optparse-applicative
+        # For online-go.com: JSON on the socket, the socket itself,
+        # the calls that trade a code for a token, and what PKCE needs
+        # to make and hash a verifier.
+        aeson websockets wuss network
+        http-client http-client-tls
+        crypton base64-bytestring random
         haskell-gi haskell-gi-base haskell-gi-overloading
         gi-glib gi-gobject gi-gio gi-gdk gi-gtk gi-gsk gi-pango
         gi-cairo gi-cairo-render gi-cairo-connector
