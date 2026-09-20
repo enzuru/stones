@@ -36,7 +36,8 @@ import qualified Data.Text                     as Text
 import           System.Random                  ( randomRIO )
 
 import           Stones.Ogs.Frame               ( Packet(..) )
-import           Stones.Setup                   ( Setup(..)
+import           Stones.Setup                   ( Handicapping(..)
+                                                , Setup(..)
                                                 , speedName
                                                 )
 
@@ -73,10 +74,10 @@ newName = do
 -- settle a repeated position the way this program's own rules do, and
 -- a game is better than a perfect match.
 --
--- A handicap asked for is asked for the same way. Nobody picks how
--- many: the server says where a game starts when it is joined, stones
--- and all, so a handicap here is a willingness to start on a board
--- that already has some, rather than a number.
+-- A handicap is not a number here. Nobody picks how many: the ranks
+-- decide that, and the server says where a game starts when it is
+-- joined, stones and all. What goes out is whether to be paired into
+-- one at all, and how strongly.
 finding :: Seek -> Packet
 finding seek = Event
   "automatch/find_match"
@@ -87,14 +88,18 @@ finding seek = Event
       , "upper_rank_diff" .= (3 :: Int)
       , "rules" .= object
         ["condition" .= ("preferred" :: Text), "value" .= ("japanese" :: Text)]
-      , "handicap" .= object
-        [ "condition" .= ("preferred" :: Text)
-        , "value" .= (if seek.wants.handicap > 0 then "enabled" else "disabled" :: Text)
-        ]
+      , "handicap" .= object ["condition" .= condition, "value" .= wanted]
       ]
   ]
   Nothing
  where
+  -- Standard is what the server does when nobody says otherwise, so it
+  -- is asked as a preference and the other two are insisted on: what
+  -- they are for is ruling the other kind of game out.
+  (condition, wanted) = case seek.wants.handicapping of
+    Required -> ("required" :: Text, "enabled" :: Text)
+    Standard -> ("no-preference", "enabled")
+    Disabled -> ("required", "disabled")
   option = object
     [ "size" .= boardName seek.wants.size
     , "speed" .= speedName seek.wants.speed

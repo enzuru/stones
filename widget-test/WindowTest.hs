@@ -67,7 +67,7 @@ noGames = startingState source asking
 
 -- | What the page of a new tab asks for here.
 asking :: Setup
-asking = Setup { against = Computer, size = 9, human = Black, strength = Fierce, handicap = 0, speed = Live, ranked = False, versus = "" }
+asking = Setup { against = Computer, size = 9, human = Black, strength = Fierce, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
 
 -- | A window with one tab, still on the page that asks what to play.
 onePage :: State

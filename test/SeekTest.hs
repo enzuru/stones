@@ -64,8 +64,8 @@ prop_askingSaysWhatKindOfGameIsWanted = withTests 1 . property $ do
                 , "value" .= ("japanese" :: Text)
                 ]
               , "handicap" .= object
-                [ "condition" .= ("preferred" :: Text)
-                , "value" .= ("disabled" :: Text)
+                [ "condition" .= ("no-preference" :: Text)
+                , "value" .= ("enabled" :: Text)
                 ]
               ]
           ]
@@ -73,19 +73,25 @@ prop_askingSaysWhatKindOfGameIsWanted = withTests 1 . property $ do
 
 prop_aHandicapIsAskedForRatherThanCounted :: Property
 prop_aHandicapIsAskedForRatherThanCounted = property $ do
-  -- Nobody picks how many. The server says where a game starts when it
-  -- is joined, stones and all, so what is asked for here is a
-  -- willingness to start on a board that already has some.
-  size  <- forAll (Gen.element [9, 13, 19])
-  fast  <- forAll (Gen.element speeds)
-  stone <- forAll (Gen.element handicaps)
+  -- Nobody picks how many. The ranks decide that, and the server says
+  -- where a game starts when it is joined, stones and all, so what is
+  -- asked for here is whether to be paired into one at all.
+  size <- forAll (Gen.element [9, 13, 19])
+  fast <- forAll (Gen.element speeds)
+  how  <- forAll (Gen.element handicappings)
   let asked = Seek
         { name  = "n"
-        , wants = wanted { size = size, speed = fast, handicap = stone }
+        , wants = wanted { size = size, speed = fast, handicapping = how }
         }
-      want = if stone > 0 then "enabled" else "disabled"
+      -- Standard is what the server does when nobody says otherwise,
+      -- so it is a preference. The other two are insisted on, because
+      -- what they are for is ruling the other kind of game out.
+      (condition, want) = case how of
+        Required -> ("required", "enabled")
+        Standard -> ("no-preference", "enabled")
+        Disabled -> ("required", "disabled")
   case finding asked of
-    Event _ [body] _ -> assert (asks body "handicap" "preferred" want)
+    Event _ [body] _ -> assert (asks body "handicap" condition want)
     other            -> annotateShow other >> failure
 
 prop_everyBoardAndSpeedHasAName :: Property

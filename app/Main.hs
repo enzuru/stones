@@ -41,10 +41,13 @@ import           Go.Types
 import qualified Stones.App                    as Stones
 import           Stones.Files                   ( dataFile )
 import qualified Stones.Menu                   as Menu
-import           Stones.Setup                   ( Speed
+import           Stones.Setup                   ( Handicapping
+                                                , Speed
                                                 , Strength
+                                                , describeHandicapping
                                                 , describeSpeed
                                                 , describeStrength
+                                                , handicappings
                                                 , speeds
                                                 , strengths
                                                 )
@@ -124,6 +127,17 @@ options =
               <> showDefaultWith (Text.unpack . describeSpeed)
               <> help ("How long a game at online-go.com may take: " <> paces)
               )
+        <*> option
+              handicapping
+              (  long "online-handicap"
+              <> metavar "NAME"
+              <> value defaultSetup.handicapping
+              <> showDefaultWith (Text.unpack . describeHandicapping)
+              <> help
+                   ("What to ask online-go.com about handicaps, which is \
+                    \a preference rather than the number --handicap \
+                    \gives an engine: " <> asked)
+              )
         <*> switch
               (  long "ranked"
               <> help
@@ -162,6 +176,19 @@ options =
   where
   names = List.intercalate ", " (map (Text.unpack . describeStrength) strengths)
   paces = List.intercalate ", " (map (Text.unpack . describeSpeed) speeds)
+  asked =
+    List.intercalate ", " (map (Text.unpack . describeHandicapping) handicappings)
+
+-- | A handicap preference by name, in any case.
+handicapping :: ReadM Handicapping
+handicapping = do
+  given <- str
+  case [ how | how <- handicappings, matches how given ] of
+    how : _ -> pure how
+    []      -> readerError ("there is no handicap setting called " <> given)
+ where
+  matches how given =
+    lower (describeHandicapping how) == lower (Text.pack given)
 
 -- | A speed by name, in any case, because a command line is typed.
 speedNamed :: ReadM Speed

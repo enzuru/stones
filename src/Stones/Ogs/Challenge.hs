@@ -55,7 +55,8 @@ import qualified Network.HTTP.Client           as Http
 import qualified Network.HTTP.Client.TLS       as Http
 
 import           Go.Types
-import           Stones.Setup                   ( Setup(..)
+import           Stones.Setup                   ( Handicapping(..)
+                                                , Setup(..)
                                                 , Speed(..)
                                                 , speedName
                                                 )
@@ -96,7 +97,7 @@ asking setup = object
     , "ranked" .= setup.ranked
     , "width" .= setup.size
     , "height" .= setup.size
-    , "handicap" .= setup.handicap
+    , "handicap" .= stones
     , "komi_auto" .= ("automatic" :: Text)
     , "disable_analysis" .= False
     , "pause_on_weekends" .= False
@@ -111,7 +112,17 @@ asking setup = object
       ]
     ]
   ]
-  where (think, each) = clockFor setup.speed
+  where
+  (think, each) = clockFor setup.speed
+  -- A challenge to somebody in particular carries a number, and the
+  -- nearest a number comes to asking for a handicap is minus one,
+  -- which tells the server to work one out from the two ranks. That is
+  -- also what standard means, so only matchmaking can tell the two
+  -- apart: asking one player is asking them, and they either take it
+  -- or they do not.
+  stones = case setup.handicapping of
+    Disabled -> 0 :: Int
+    _        -> -1
 
 -- | The time to think in and the length of one short period after it,
 -- for a game of this speed.

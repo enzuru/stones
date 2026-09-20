@@ -28,18 +28,19 @@ import qualified Hedgehog.Gen                  as Gen
 import           Go.Types
 import           Stones.Ogs.Challenge
 import           Stones.Setup                   ( Against(..)
-                                                , speedName
-                                                , speeds
+                                                , Handicapping(..)
                                                 , Setup(..)
                                                 , Speed(..)
                                                 , Strength(..)
-                                                , handicaps
+                                                , handicappings
+                                                , speedName
+                                                , speeds
                                                 )
 
 -- | A game to ask for.
 wanted :: Setup
 wanted =
-  Setup { against = Computer, size = 9, human = Black, strength = Gentle, handicap = 0, speed = Live, ranked = False, versus = "" }
+  Setup { against = Computer, size = 9, human = Black, strength = Gentle, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
 
 -- | A field of what is asked for.
 askedFor :: Setup -> Text -> Maybe Value
@@ -53,16 +54,6 @@ field :: Text -> Value -> Maybe Value
 field key = \value -> case value of
   Object fields -> Aeson.parseMaybe (Aeson..: Key.fromText key) fields
   _             -> Nothing
-
-prop_aChallengeIsNeverRanked :: Property
-prop_aChallengeIsNeverRanked = property $ do
-  -- A rank belongs to whoever earned it, and these are games played by
-  -- a program to find out whether it works.
-  size  <- forAll (Gen.element [9, 13, 19])
-  side  <- forAll (Gen.element [Black, White])
-  stone <- forAll (Gen.element handicaps)
-  let setup = wanted { size = size, human = side, handicap = stone }
-  ofGame setup "ranked" === Just (Bool False)
 
 prop_theClockIsLongBecauseNobodyWasAskedWhatItShouldBe :: Property
 prop_theClockIsLongBecauseNobodyWasAskedWhatItShouldBe =
@@ -102,14 +93,26 @@ prop_aGameCountsTowardsARankOnlyWhenItIsAskedTo =
     ofGame wanted "ranked" === Just (Bool False)
     ofGame wanted { ranked = True } "ranked" === Just (Bool True)
 
-prop_theBoardAndTheStonesAreWhatWasChosen :: Property
-prop_theBoardAndTheStonesAreWhatWasChosen = property $ do
-  size  <- forAll (Gen.element [9, 13, 19])
-  stone <- forAll (Gen.element handicaps)
-  let setup = wanted { size = size, handicap = stone }
+prop_theBoardIsTheOneThatWasChosen :: Property
+prop_theBoardIsTheOneThatWasChosen = property $ do
+  size <- forAll (Gen.element [9, 13, 19])
+  let setup = wanted { size = size }
   ofGame setup "width" === Just (Number (fromIntegral size))
   ofGame setup "height" === Just (Number (fromIntegral size))
-  ofGame setup "handicap" === Just (Number (fromIntegral stone))
+
+prop_aHandicapOnAChallengeIsANumberTheServerWorksOut :: Property
+prop_aHandicapOnAChallengeIsANumberTheServerWorksOut = property $ do
+  how <- forAll (Gen.element handicappings)
+  -- Asking one player is asking them: they take the game or they do
+  -- not. So the nearest a challenge comes to asking for a handicap is
+  -- minus one, which tells the server to work one out from the two
+  -- ranks, and required and standard come to the same thing here.
+  -- Only matchmaking can tell them apart.
+  let stones = case how of
+        Disabled -> 0 :: Int
+        _        -> -1
+  ofGame wanted { handicapping = how } "handicap"
+    === Just (Number (fromIntegral stones))
 
 prop_theColourAskedForIsTheOneChosen :: Property
 prop_theColourAskedForIsTheOneChosen = withTests 1 . property $ do

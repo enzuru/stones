@@ -36,6 +36,9 @@ module Stones.Setup
   , describeStrength
   , handicaps
   , describeHandicap
+  , Handicapping(..)
+  , handicappings
+  , describeHandicapping
   , SetupEvent(..)
   , defaultSetup
   , boardWidths
@@ -112,6 +115,33 @@ describePlace :: Against -> Text
 describePlace Computer = "This computer"
 describePlace Online   = "online-go.com"
 
+-- | What to ask a server about handicaps.
+--
+-- Not a number. Nobody picks how many stones a game somebody else is
+-- paired into starts with: the ranks decide that, and the server says
+-- where the game starts when it is joined, stones and all. What there
+-- is to ask for is whether to be paired into one at all.
+data Handicapping
+  = Required
+    -- ^ Only a game with a handicap on it.
+  | Standard
+    -- ^ Whatever the two ranks call for, which is what most people
+    -- want and what the server does when nobody says otherwise.
+  | Disabled
+    -- ^ An even board, whoever is on the other side of it.
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
+-- | Every one of them, in the order the page offers them.
+handicappings :: [Handicapping]
+handicappings = [minBound .. maxBound]
+
+-- | What to call one in the window.
+describeHandicapping :: Handicapping -> Text
+describeHandicapping = \case
+  Required -> "Required"
+  Standard -> "Standard"
+  Disabled -> "Disabled"
+
 -- | How long a game is allowed to take.
 --
 -- Only a game on a server asks. A program on this machine answers as
@@ -184,6 +214,9 @@ data Setup = Setup
     -- ^ How many stones the player starts with down, or none.
   , speed    :: Speed
     -- ^ How long a game on a server is allowed to take.
+  , handicapping :: Handicapping
+    -- ^ What to ask a server about handicaps, which is a preference
+    -- rather than the number the other place takes.
   , ranked   :: Bool
     -- ^ Whether a game on a server counts towards a rank.
   , versus   :: Text
@@ -227,6 +260,7 @@ defaultSetup = Setup { against  = Computer
                      , strength = Fierce
                      , handicap = 0
                      , speed    = Live
+                     , handicapping = Standard
                        -- A rank belongs to the person who earned it,
                        -- and a program plays some of these games, so
                        -- nothing counts towards one unless it is asked
@@ -249,6 +283,7 @@ data SetupEvent
   | ChoseHandicap Int
   | ChoseSpeed Speed
   | ChoseRanked Bool
+  | ChoseHandicapping Handicapping
   | ChoseVersus Text
   | StartPressed
   | SignInPressed
@@ -268,6 +303,7 @@ chose setup = \case
   ChoseHandicap n     -> setup { handicap = n }
   ChoseSpeed how      -> setup { speed = how }
   ChoseRanked counts  -> setup { ranked = counts }
+  ChoseHandicapping h -> setup { handicapping = h }
   ChoseVersus who     -> setup { versus = who }
   StartPressed        -> setup
   SignInPressed       -> setup
@@ -285,7 +321,9 @@ describeSetup setup = Text.intercalate "  \183  " (board : rest)
     -- strength is a thing only a program has.
     Online -> [describePlace Online, describeSpeed setup.speed]
       <> [ "Ranked" | setup.ranked ]
-      <> stones
+      <> [ describeHandicapping setup.handicapping <> " handicap"
+         | setup.handicapping /= Standard
+         ]
       <> [ versusOf setup | not (Text.null (versusOf setup)) ]
     Computer -> [colorWord setup.human, describeStrength setup.strength] <> stones
   stones | setup.handicap < 2 = []
@@ -357,9 +395,14 @@ launchPage signing setup = bin
                setup.ranked
                ChoseRanked
       , choice "Handicap"
-               [ (describeHandicap n, describeHandicap n, n) | n <- handicaps ]
-               setup.handicap
-               ChoseHandicap
+               [ ( describeHandicapping h
+                 , describeHandicapping h
+                 , h
+                 )
+               | h <- handicappings
+               ]
+               setup.handicapping
+               ChoseHandicapping
       , versus'
       , account
       ]

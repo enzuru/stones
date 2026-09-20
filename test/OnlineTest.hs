@@ -48,6 +48,7 @@ import           Stones.Log                     ( quiet )
 import           Stones.Online
 import           Stones.Opponent
 import           Stones.Setup                   ( Against(..)
+                                                , Handicapping(..)
                                                 , Setup(..)
                                                 , Speed(..)
                                                 , Strength(..)
@@ -70,6 +71,7 @@ wanted = Setup { against  = Online
                , handicap = 0
                , speed    = Live
                , ranked   = False
+               , handicapping = Standard
                , versus   = ""
                }
 

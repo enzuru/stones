@@ -112,6 +112,7 @@ main = do
                                         , handicap = 0
                                         , speed    = Live
                                         , ranked   = False
+                                        , handicapping = Standard
                                         , versus   = ""
                                         }
   void (run window { update = reporting
