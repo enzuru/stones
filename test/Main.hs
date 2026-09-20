@@ -26,6 +26,7 @@ import qualified DrawTest
 import qualified FakeEngineTest
 import qualified FrameTest
 import qualified LoginTest
+import qualified SocketTest
 import qualified GameTest
 import qualified GeometryTest
 import qualified GtpTest
@@ -47,6 +48,7 @@ main = do
     , DrawTest.tests
     , FrameTest.tests
     , LoginTest.tests
+    , SocketTest.tests
     , ProtocolTest.tests
     , SetupTest.tests
     , SessionTest.tests

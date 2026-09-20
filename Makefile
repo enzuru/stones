@@ -61,7 +61,7 @@ MEASURED := $(shell find $(SRC) -name '*.hs' \
 # but GTK still refuses to start without a display.
 XVFB := xvfb-run -s "-screen 0 1280x1024x24"
 
-.PHONY: all build stones ui check check-pure check-widget check-input coverage run clean
+.PHONY: all build stones ui check check-pure check-widget check-input check-cabal coverage run clean
 
 # One compiler at a time. Each call below loads the whole gi-gtk
 # interface, so `make -j` multiplies the memory rather than dividing the
@@ -97,7 +97,7 @@ $(BUILD)/stones: $(SOURCES) $(APP)/Main.hs $(UI)
 	ghc $(INCLUDES) -i$(APP) $(WARNINGS) $(PACKAGES) -threaded -O2 \
 	  -outputdir $(BUILD)/objects -o $@ $(APP)/Main.hs $(GHC_RTS)
 
-check: check-pure check-widget check-input
+check: check-pure check-widget check-input check-cabal
 
 # The rules, the drawing, the protocol, and what each event does. None
 # of these need a display: they are functions, a cairo surface in
@@ -131,6 +131,15 @@ $(BUILD)/input-test: $(SOURCES) $(INPUT)/Main.hs
 	@mkdir -p $(BUILD)
 	ghc $(INCLUDES) -i$(INPUT) $(WARNINGS) $(PACKAGES) -threaded \
 	  -outputdir $(BUILD)/input-objects -o $@ $(INPUT)/Main.hs $(GHC_RTS)
+
+# That the package says what it needs.
+#
+# Everything else here builds with ghc against the shell's package
+# database, where every package is there whether this one names it or
+# not, so a dependency left out of the cabal file is invisible to it.
+# Only cabal notices, because only cabal hides what was not asked for.
+check-cabal:
+	GHCRTS=-M4g cabal build all
 
 # What the tests reach, by GHC's own counting.
 #
