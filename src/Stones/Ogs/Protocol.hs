@@ -401,6 +401,12 @@ incoming table name arguments = do
     -- A game that has finished sends the whole of itself again, with
     -- what it came to in it. Reading that as a game starting would put
     -- the board back up and throw the result away.
+    --
+    -- A game that is being counted is read as a game in play, which is
+    -- wrong, and out of reach: it only arrives when a game already in
+    -- that part is joined, and nothing here joins a game it did not
+    -- just ask for. Whoever adds that has this to do first, and what
+    -- to do it with is in the same payload, in @phase@ and @removed@.
     "gamedata" -> case fieldOf "phase" body >>= asString of
       Just "finished" -> Counted <$> resultFrom body
       _               -> Just (either Lost Began (openingFrom table.me body))
