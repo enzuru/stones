@@ -44,7 +44,8 @@ import           Stones.Setup                   ( Strength
                                                 , describeStrength
                                                 , strengths
                                                 )
-import           Stones.Setup                   ( Setup(..)
+import           Stones.Setup                   ( Against(..)
+                                                , Setup(..)
                                                 , defaultSetup
                                                 )
 import qualified Stones.Opponent.GnuGo         as GnuGo
@@ -65,7 +66,14 @@ options :: Parser Options
 options =
   Options
     <$> (   Setup
-        <$> option
+        <$> (   flag'
+                Online
+                (  long "online"
+                <> help "Open on the page that plays at online-go.com"
+                )
+            <|> pure defaultSetup.against
+            )
+        <*> option
               (within 2 19 "a board width")
               (  long "size"
               <> metavar "N"

@@ -258,7 +258,13 @@ probe program setup = open program setup >>= \case
 -- never left behind and never waited on twice.
 withGnuGo :: FilePath -> (Opponents -> IO a) -> IO a
 withGnuGo program use = bracket (newIORef []) stopEveryone $ \running ->
-  use Opponents { open = openOne running, close = (.leave) }
+  use Opponents { open  = openOne running
+                , close = (.leave)
+                  -- There is nobody to be, so there is nothing to sign
+                  -- in as. The window never asks this of a game on
+                  -- this machine, and says so if it ever does.
+                , enter = pure (Left "Games on this computer need no account.")
+                }
  where
   openOne running setup = open program setup >>= \case
     Left  why      -> pure (Left why)

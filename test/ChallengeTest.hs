@@ -27,7 +27,8 @@ import qualified Hedgehog.Gen                  as Gen
 
 import           Go.Types
 import           Stones.Ogs.Challenge
-import           Stones.Setup                   ( Setup(..)
+import           Stones.Setup                   ( Against(..)
+                                                , Setup(..)
                                                 , Strength(..)
                                                 , handicaps
                                                 )
@@ -35,7 +36,7 @@ import           Stones.Setup                   ( Setup(..)
 -- | A game to ask for.
 wanted :: Setup
 wanted =
-  Setup { size = 9, human = Black, strength = Gentle, handicap = 0 }
+  Setup { against = Computer, size = 9, human = Black, strength = Gentle, handicap = 0 }
 
 -- | A field of what is asked for.
 askedFor :: Setup -> Text -> Maybe Value

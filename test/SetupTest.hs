@@ -22,10 +22,13 @@ import           Stones.Setup
 -- | Any of the choices the page offers.
 choice :: Gen SetupEvent
 choice = Gen.choice
-  [ ChoseBoard <$> Gen.element boardWidths
+  [ ChosePlace <$> Gen.element places
+  , ChoseBoard <$> Gen.element boardWidths
   , ChoseSide <$> Gen.element [Black, White]
   , ChoseStrength <$> Gen.element strengths
+  , ChoseHandicap <$> Gen.element handicaps
   , pure StartPressed
+  , pure SignInPressed
   ]
 
 prop_aGameStartsAsAGameOfGoDoes :: Property
@@ -45,8 +48,12 @@ prop_aChoiceChangesTheOneThingItIsAbout :: Property
 prop_aChoiceChangesTheOneThingItIsAbout = withTests 1 . property $ do
   chose defaultSetup (ChoseBoard 9) === defaultSetup { size = 9 }
   chose defaultSetup (ChoseSide White)
-    === Setup { size = 19, human = White, strength = Fierce, handicap = 0 }
+    === Setup { against = Computer, size = 19, human = White, strength = Fierce, handicap = 0 }
   chose defaultSetup (ChoseStrength Gentle) === defaultSetup { strength = Gentle }
+  chose defaultSetup (ChosePlace Online) === defaultSetup { against = Online }
+  -- Signing in is not a choice about the game. It is about the window,
+  -- and the page holds what it held.
+  chose defaultSetup SignInPressed === defaultSetup
 
 prop_startingIsNotAChoice :: Property
 prop_startingIsNotAChoice = property $ do
@@ -64,13 +71,45 @@ prop_everyChoiceSticks = property $ do
   -- for, and nothing else about it moved.
   assert (after.size `elem` boardWidths)
   assert (after.strength `elem` strengths)
+  assert (after.against `elem` places)
 
 prop_thePageSaysWhatItIsAskingFor :: Property
 prop_thePageSaysWhatItIsAskingFor = withTests 1 . property $ do
   describeSetup defaultSetup === "19\215\&19  \183  Black  \183  Fierce"
   describeSetup
-      Setup { size = 9, human = White, strength = Gentle, handicap = 0 }
+      Setup { against = Computer, size = 9, human = White, strength = Gentle, handicap = 0 }
     === "9\215\&9  \183  White  \183  Gentle"
+
+prop_aPageAskingAboutAServerSaysNothingAboutAnEngine :: Property
+prop_aPageAskingAboutAServerSaysNothingAboutAnEngine =
+  withTests 1 . property $ do
+    -- A game somebody else pairs settles the colour and the opponent
+    -- on the other side, so naming either here would be saying
+    -- something this program does not know yet.
+    let online = defaultSetup { against = Online }
+    describeSetup online === "19\215\&19  \183  online-go.com"
+    describeSetup online { size = 9, human = White, strength = Gentle }
+      === "9\215\&9  \183  online-go.com"
+
+prop_thereAreTwoPlacesToPlayAndBothHaveNames :: Property
+prop_thereAreTwoPlacesToPlayAndBothHaveNames = withTests 1 . property $ do
+  places === [Computer, Online]
+  map describePlace places === ["This computer", "online-go.com"]
+  -- Nothing is started until there is somebody to start it as, so a
+  -- game on this machine is always ready and one on a server is not.
+  defaultSetup.against === Computer
+
+prop_signingInSaysWhereItHasGotTo :: Property
+prop_signingInSaysWhereItHasGotTo = withTests 1 . property $ do
+  describeSigning SignedOut === "Not signed in"
+  describeSigning SigningIn === "Waiting for the browser\8230"
+  describeSigning (SignedIn "hikaru") === "Signed in as hikaru"
+  -- A refusal says why in the same place, rather than somewhere the
+  -- player has to go looking for it.
+  describeSigning (SignInRefused "the browser never came back")
+    === "the browser never came back"
+  map signedIn [SignedOut, SigningIn, SignedIn "hikaru", SignInRefused "no"]
+    === [False, False, True, False]
 
 prop_theStrengthsHaveNamesOfTheirOwn :: Property
 prop_theStrengthsHaveNamesOfTheirOwn = withTests 1 . property $ do

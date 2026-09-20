@@ -23,6 +23,7 @@
 module Stones.Opponent
   ( Opponent(..)
   , Opponents(..)
+  , choosing
   , Told(..)
   , Heard(..)
   , Opening(..)
@@ -38,7 +39,9 @@ import qualified Data.Text                     as Text
 import           Pipes                          ( Producer )
 
 import           Go.Types
-import           Stones.Setup                   ( Setup )
+import           Stones.Setup                   ( Against(..)
+                                                , Setup(..)
+                                                )
 
 -- | The other side of one game.
 data Opponent = Opponent
@@ -62,6 +65,25 @@ data Opponents = Opponents
     -- ^ An opponent for a game set up like this.
   , close :: Opponent -> IO ()
     -- ^ Let one go, when the game it was playing has closed.
+  , enter :: IO (Either Text Text)
+    -- ^ Sign in wherever the games are, answering with what to call
+    -- the player. Only one of the two places asks for it, and the
+    -- window only asks when that is the place chosen.
+  }
+
+-- | One place to get a game from, made of two, picked by where the
+-- game says it is played.
+--
+-- Letting one go is the same either way: an opponent knows how to
+-- leave, and neither place keeps anything about it that outliving the
+-- leaving would matter to.
+choosing :: Opponents -> Opponents -> Opponents
+choosing computer online = Opponents
+  { open  = \setup -> case setup.against of
+              Computer -> computer.open setup
+              Online   -> online.open setup
+  , close = (.leave)
+  , enter = online.enter
   }
 
 -- | What this program does, which the other side is told about.

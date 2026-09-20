@@ -20,6 +20,12 @@
 -- and it is not worth one until somebody has asked for a game.
 module Stones.Setup
   ( Setup(..)
+  , Against(..)
+  , places
+  , describePlace
+  , Signing(..)
+  , describeSigning
+  , signedIn
   , Strength(..)
   , strengths
   , describeStrength
@@ -79,9 +85,60 @@ describeStrength Gentle = "Gentle"
 describeStrength Fair   = "Fair"
 describeStrength Fierce = "Fierce"
 
+-- | Where a game is played.
+--
+-- Two places, and they ask for different things. A program on this
+-- machine is told which colour to take and how hard to try. A game
+-- somebody else is paired into settles both of those on the other
+-- side, and asks instead who the player is.
+data Against
+  = Computer
+    -- ^ Against a program on this machine.
+  | Online
+    -- ^ Against whoever online-go.com pairs the player with.
+  deriving (Eq, Show, Enum, Bounded)
+
+-- | Both, in the order the page offers them.
+places :: [Against]
+places = [minBound .. maxBound]
+
+-- | What to call one in the window.
+describePlace :: Against -> Text
+describePlace Computer = "This computer"
+describePlace Online   = "online-go.com"
+
+-- | How far the player has got with signing in.
+--
+-- Only one place asks for it, and the page only shows this when that
+-- is the place chosen.
+data Signing
+  = SignedOut
+  | SigningIn
+    -- ^ The browser is open and the server has not answered yet.
+  | SignedIn Text
+    -- ^ Signed in, and this is what to call the player.
+  | SignInRefused Text
+    -- ^ It did not work, and this is why.
+  deriving (Eq, Show)
+
+-- | The line the sign-in row shows.
+describeSigning :: Signing -> Text
+describeSigning = \case
+  SignedOut         -> "Not signed in"
+  SigningIn         -> "Waiting for the browser\8230"
+  SignedIn name     -> "Signed in as " <> name
+  SignInRefused why -> why
+
+-- | Is the player signed in?
+signedIn :: Signing -> Bool
+signedIn (SignedIn _) = True
+signedIn _            = False
+
 -- | What a game will be started with.
 data Setup = Setup
-  { size     :: Int
+  { against  :: Against
+    -- ^ Where the game is played, which decides what else is asked.
+  , size     :: Int
     -- ^ The width of the board.
   , human    :: Color
     -- ^ The colour the player takes.
@@ -108,8 +165,12 @@ describeHandicap n = Text.pack (show n)
 -- | A 19x19 game as Black against an opponent trying hard, which is
 -- what a game of Go is when nobody says otherwise.
 defaultSetup :: Setup
-defaultSetup =
-  Setup { size = 19, human = Black, strength = Fierce, handicap = 0 }
+defaultSetup = Setup { against  = Computer
+                     , size     = 19
+                     , human    = Black
+                     , strength = Fierce
+                     , handicap = 0
+                     }
 
 -- | The boards on offer. Every board a player is likely to want, and
 -- no more: the rules work on any width, and nobody plays 14x14.
@@ -118,36 +179,43 @@ boardWidths = [9, 13, 19]
 
 -- | What the player did to the page.
 data SetupEvent
-  = ChoseBoard Int
+  = ChosePlace Against
+  | ChoseBoard Int
   | ChoseSide Color
   | ChoseStrength Strength
   | ChoseHandicap Int
   | StartPressed
+  | SignInPressed
+    -- ^ Sign in to online-go.com. This is about the window rather than
+    -- about one tab, and the window is what acts on it, the same way
+    -- it acts on starting.
   deriving (Eq, Show)
 
 -- | What a choice does to the page. Starting is not a choice, and the
 -- window is what acts on it.
 chose :: Setup -> SetupEvent -> Setup
 chose setup = \case
+  ChosePlace where'   -> setup { against = where' }
   ChoseBoard n        -> setup { size = n }
   ChoseSide side      -> setup { human = side }
   ChoseStrength which -> setup { strength = which }
   ChoseHandicap n     -> setup { handicap = n }
   StartPressed        -> setup
+  SignInPressed       -> setup
 
 -- | The line under the title while this page is up.
 describeSetup :: Setup -> Text
-describeSetup setup =
-  board
-    <> "  \183  "
-    <> colorWord setup.human
-    <> "  \183  "
-    <> describeStrength setup.strength
-    <> stones
+describeSetup setup = Text.intercalate "  \183  " (board : rest)
  where
   board = let n = Text.pack (show setup.size) in n <> "\215" <> n
-  stones | setup.handicap < 2 = ""
-         | otherwise = "  \183  " <> describeHandicap setup.handicap <> " stones"
+  -- Only what that place asks for. A game somebody else pairs settles
+  -- the colour and the opponent on the other side, so naming either
+  -- here would be saying something this program does not know.
+  rest  = case setup.against of
+    Online   -> [describePlace Online]
+    Computer -> [colorWord setup.human, describeStrength setup.strength] <> stones
+  stones | setup.handicap < 2 = []
+         | otherwise = [describeHandicap setup.handicap <> " stones"]
 
 -- | The name of a colour, for a sentence.
 colorWord :: Color -> Text
@@ -164,12 +232,12 @@ colorWord White = "White"
 -- player sees it from inside the program. Under it is a settings page
 -- of the ordinary kind: a preferences group, a row per thing to
 -- choose, and a toggle group in each row.
-launchPage :: Setup -> Widget SetupEvent
-launchPage setup = bin
+launchPage :: Signing -> Setup -> Widget SetupEvent
+launchPage signing setup = bin
   Adw.StatusPage
   [ #iconName := "com.github.enzuru.Stones"
   , #title := "Stones"
-  , #description := "Play Go against GNU Go"
+  , #description := "Play Go"
   ]
   (bin
     Adw.Clamp
@@ -177,43 +245,71 @@ launchPage setup = bin
     (container
       Gtk.Box
       [#orientation := Gtk.OrientationVertical, #spacing := 24]
-      [ BoxChild defaultBoxChildProperties $ container
-        Adw.PreferencesGroup
-        []
-        [ choice "Board"
-                 [ (Text.pack (show n), boardLabel n, n) | n <- boardWidths ]
-                 setup.size
-                 ChoseBoard
-        , choice "You play"
-                 [ (colorWord side, colorWord side, side)
-                 | side <- [Black, White]
-                 ]
-                 setup.human
-                 ChoseSide
-        , choice
-          "Opponent"
-          [ (describeStrength which, describeStrength which, which)
-          | which <- strengths
-          ]
-          setup.strength
-          ChoseStrength
-        , choice
-          "Handicap"
-          [ (describeHandicap n, describeHandicap n, n) | n <- handicaps ]
-          setup.handicap
-          ChoseHandicap
-        ]
+      [ BoxChild defaultBoxChildProperties
+        $ container Adw.PreferencesGroup [] (Vector.fromList rows)
       , BoxChild defaultBoxChildProperties $ widget
         Gtk.Button
-        [ #label := "Start Game"
+        [ #label := button
         , #halign := Gtk.AlignCenter
+        , #sensitive := ready
         , classes ["suggested-action", "pill"]
         , on #clicked StartPressed
         ]
       ]
     )
   )
-  where boardLabel n = let w = Text.pack (show n) in w <> "\215" <> w
+ where
+  boardLabel n = let w = Text.pack (show n) in w <> "\215" <> w
+  board = choice "Play on"
+                 [ (Text.pack (show n), boardLabel n, n) | n <- boardWidths ]
+                 setup.size
+                 ChoseBoard
+  where' = choice "Play"
+                  [ (describePlace p, describePlace p, p) | p <- places ]
+                  setup.against
+                  ChosePlace
+  -- The page asks for what that place can answer, and for nothing
+  -- else. A row that did nothing would be worse than no row at all.
+  rows = case setup.against of
+    Online   -> [where', board, account]
+    Computer ->
+      [ where'
+      , board
+      , choice "You play"
+               [ (colorWord side, colorWord side, side) | side <- [Black, White] ]
+               setup.human
+               ChoseSide
+      , choice "Opponent"
+               [ (describeStrength w, describeStrength w, w) | w <- strengths ]
+               setup.strength
+               ChoseStrength
+      , choice "Handicap"
+               [ (describeHandicap n, describeHandicap n, n) | n <- handicaps ]
+               setup.handicap
+               ChoseHandicap
+      ]
+  -- Signing in opens a browser, so it is a button rather than
+  -- something that happens on its own when the place is chosen.
+  account = container
+    Adw.ActionRow
+    [#title := "Account", #subtitle := describeSigning signing]
+    [ rowSuffix
+        (widget
+          Gtk.Button
+          [ #label := if signedIn signing then "Signed In" else "Sign In"
+          , #valign := Gtk.AlignCenter
+          , #sensitive := signing /= SigningIn && not (signedIn signing)
+          , on #clicked SignInPressed
+          ]
+        )
+    ]
+  -- Nothing to start until there is somebody to start it as.
+  ready = setup.against == Computer || signedIn signing
+  button = case setup.against of
+    Computer -> "Start Game"
+    -- It is not started so much as waited for: somebody else has to be
+    -- looking for the same game at the same time.
+    Online   -> "Find a Game"
 
 -- | One row of the page: what is being chosen, and a group of toggles
 -- to choose from.

@@ -53,6 +53,7 @@ silent = Opponent { name  = "nobody"
 source :: Opponents
 source = Opponents { open  = \_ -> pure (Right silent)
                    , close = \_ -> pure ()
+                   , enter = pure (Right "nobody")
                    }
 
 -- | A source that writes down what it hands out and what it is given
@@ -66,6 +67,7 @@ countingSource = do
   pure
     ( Opponents { open  = \_ -> Right silent <$ handedOut
                 , close = \_ -> handedBack
+                , enter = pure (Right "nobody")
                 }
     , counts
     )
@@ -96,7 +98,7 @@ empty' = startingState source asking
 
 -- | What the page of a new tab asks for, in these tests.
 asking :: Setup
-asking = Setup { size = 9, human = Black, strength = Fierce, handicap = 0 }
+asking = Setup { against = Computer, size = 9, human = Black, strength = Fierce, handicap = 0 }
 
 -- | The tab that is open, taken through its page and started.
 --
@@ -299,7 +301,7 @@ prop_theTitleSaysWhoseTurnItIs = withTests 1 . property $ do
 prop_aTabOnItsPageSaysWhatItIsAskingFor :: Property
 prop_aTabOnItsPageSaysWhatItIsAskingFor = withTests 1 . property $ do
   let wanted =
-        Setup { size = 13, human = White, strength = Gentle, handicap = 0 }
+        Setup { against = Computer, size = 13, human = White, strength = Gentle, handicap = 0 }
   statusOf (Choosing wanted) === "New game"
   detailOf (Choosing wanted) === describeSetup wanted
   detailOf (Choosing wanted) === "13\215\&13  \183  White  \183  Gentle"
@@ -321,6 +323,87 @@ prop_theTitleSaysHowTheGameEnded = withTests 1 . property $ do
   stateOf theirs === opponentOf theirs <> " resigned"
   stateOf theirs === "nobody resigned"
   stateOf mine === "You resigned"
+
+-- * Signing in
+----------------
+
+-- | A source that says who signed in, and writes down how often it was
+-- asked.
+--
+-- Signing in opens a browser, so being asked twice is two browsers and
+-- a second one waiting on a port the first one has.
+askedToSignIn :: Either Text Text -> IO (Opponents, IO Int)
+askedToSignIn answer = do
+  times <- newIORef (0 :: Int)
+  pure
+    ( source { enter = modifyIORef' times (+ 1) >> pure answer }
+    , readIORef times
+    )
+
+prop_signingInWaitsAndThenSaysWho :: Property
+prop_signingInWaitsAndThenSaysWho = withTests 1 . property $ do
+  -- The browser is somewhere else and the window stays up while it is
+  -- open, so the waiting is a state of its own rather than a pause.
+  let waiting = next empty' (InSetup 1 SignInPressed)
+  waiting.signing === SigningIn
+  (next waiting (SignedInAs (Right "hikaru"))).signing === SignedIn "hikaru"
+  (next waiting (SignedInAs (Left "it was refused"))).signing
+    === SignInRefused "it was refused"
+
+prop_signingInIsAskedForOnceHoweverOftenItIsPressed :: Property
+prop_signingInIsAskedForOnceHoweverOftenItIsPressed = property $ do
+  (asking', count) <- evalIO (askedToSignIn (Right "hikaru"))
+  let start = startingState asking' asking
+  -- Pressed again while the first one is still going, which is what a
+  -- player does when nothing seems to be happening.
+  events <- ran start (InSetup 1 SignInPressed)
+  let waiting = next start (InSetup 1 SignInPressed)
+  -- The second press asks for nothing at all, so there is no second
+  -- browser to open and no second port to wait on.
+  null (jobsOf (commandOf (update' waiting (InSetup 1 SignInPressed)))) === True
+  (next waiting (InSetup 1 SignInPressed)).signing === SigningIn
+  times <- evalIO count
+  times === 1
+  -- And what came back is what the window is told.
+  case events of
+    [SignedInAs said] -> said === Right "hikaru"
+    _                 -> annotate "it answered with something else" >> failure
+
+prop_aWindowStartsSignedOut :: Property
+prop_aWindowStartsSignedOut = withTests 1 . property $ do
+  -- Nothing is opened until somebody asks. A window that signed in as
+  -- it started would open a browser at every launch.
+  empty'.signing === SignedOut
+  signedIn empty'.signing === False
+
+prop_signingInIsAboutTheWindowAndNotTheTab :: Property
+prop_signingInIsAboutTheWindowAndNotTheTab = withTests 1 . property $ do
+  -- Every tab shows the same account, so the button on any of them is
+  -- the same button, and what it does never reaches the page.
+  let two     = next (next empty' NewTabPressed) NewTabPressed
+      pressed = next two (InSetup 2 SignInPressed)
+  pressed.signing === SigningIn
+  chosenIn 1 pressed === Just asking
+  chosenIn 2 pressed === Just asking
+
+prop_aSourceMadeOfTwoPicksByWhereTheGameIsPlayed :: Property
+prop_aSourceMadeOfTwoPicksByWhereTheGameIsPlayed = property $ do
+  asked' <- evalIO (newIORef [])
+  let noting what = Opponents
+        { open  = \_ -> Right silent <$ modifyIORef' asked' (<> [what])
+        , close = \_ -> pure ()
+        , enter = pure (Right what)
+        }
+      both = choosing (noting "computer") (noting "online")
+  -- Each place is asked for the games played there and for no others,
+  -- and signing in goes to the one place that has accounts.
+  _    <- evalIO (both.open asking)
+  _    <- evalIO (both.open asking { against = Online })
+  _    <- evalIO (both.open asking)
+  went <- evalIO (readIORef asked')
+  went === ["computer", "online", "computer"]
+  name <- evalIO both.enter
+  name === Right "online"
 
 -- * The counting at the end
 -----------------------------
@@ -637,7 +720,8 @@ prop_theWindowIsWiredToItsOwnUpdateAndView = withTests 1 . property $ do
   -- Written out rather than updated, because `human` is a field of a
   -- game as well and a record update cannot be told which is meant.
   let playingWhite =
-        Setup { size     = asking.size
+        Setup { against  = asking.against
+              , size     = asking.size
               , human    = White
               , strength = asking.strength
               , handicap = asking.handicap

@@ -112,6 +112,10 @@ data State = State
     -- started, so a second game of the same kind is one click.
   , opponents :: Opponents
     -- ^ Where a game gets its opponent, once there is a game.
+  , signing   :: Signing
+    -- ^ How far the player has got with signing in, which one of the
+    -- two places asks for. It belongs to the window rather than to a
+    -- tab: signing in once is signing in for all of them.
   }
 
 -- | What the window reports.
@@ -129,6 +133,9 @@ data Event
   | TabsReordered (Vector Text)
   | ResignChosen
     -- ^ Give up the game showing, which is what the menu means by it.
+  | SignedInAs (Either Text Text)
+    -- ^ The signing in that was started finished, either with what to
+    -- call the player or with why not.
   | Ticking
     -- ^ A second has gone by, and every clock that is going down goes
     -- down by one.
@@ -146,6 +153,7 @@ startingState opponents opening = State { openTabs  = []
                                         , nextTab   = 1
                                         , opening   = opening
                                         , opponents = opponents
+                                        , signing   = SignedOut
                                         }
 
 -- * Updating
@@ -157,7 +165,15 @@ update' state = \case
 
   NewTabPressed                -> openTab state
 
+  -- Signing in is about the window rather than about the tab the
+  -- button happens to be on, so it never reaches the page.
+  InSetup _ SignInPressed      -> signIn state
+
   InSetup tab event            -> inSetup state tab event
+
+  SignedInAs (Right name)      -> Transition state { signing = SignedIn name } none
+  SignedInAs (Left  why )      ->
+    Transition state { signing = SignInRefused why } none
 
   TabOpened tab (Right engine) -> inGame state tab (opened engine)
   TabOpened tab (Left  why   ) -> inGame state tab (stayAt . couldNotOpen why)
@@ -185,6 +201,18 @@ update' state = \case
   ResignChosen                 -> case shownGame state of
     Just (tab, _) -> inGame state tab (`step` ResignPressed)
     Nothing       -> Transition state none
+
+-- | Start signing in, which opens a browser and waits.
+--
+-- Pressing it twice while it is going is not two sign-ins. The first
+-- one has a browser window open somewhere and is waiting on it, and a
+-- second would open another and wait on a port the first one has.
+signIn :: State -> Transition State Event
+signIn state
+  | state.signing == SigningIn = Transition state none
+  | otherwise = Transition
+    state { signing = SigningIn }
+    (perform (Just . SignedInAs <$> state.opponents.enter))
 
 -- | A game that has changed without anything being asked of anybody.
 stayAt :: Session -> Step
@@ -567,7 +595,7 @@ gameTabs state = tabView
   tabFor (tab, Choosing setup) = Tab
     { tabKey   = keyOf tab
     , tabTitle = "New Game"
-    , tabChild = InSetup tab <$> launchPage setup
+    , tabChild = InSetup tab <$> launchPage state.signing setup
     }
 
 -- | One game's board, with a little room around it so that the wood

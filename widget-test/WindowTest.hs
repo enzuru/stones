@@ -21,6 +21,7 @@ module WindowTest
 where
 
 import           Data.Text                      ( Text )
+import qualified Data.Text                     as Text
 import qualified GI.Adw                        as Adw
 import qualified GI.Gio                        as Gio
 import qualified GI.Gtk                        as Gtk
@@ -47,6 +48,7 @@ silent = Opponent { name  = "nobody"
 source :: Opponents
 source = Opponents { open  = \_ -> pure (Right silent)
                    , close = \_ -> pure ()
+                   , enter = pure (Right "nobody")
                    }
 
 -- | Where the window lands after an event.
@@ -61,7 +63,7 @@ noGames = startingState source asking
 
 -- | What the page of a new tab asks for here.
 asking :: Setup
-asking = Setup { size = 9, human = Black, strength = Fierce, handicap = 0 }
+asking = Setup { against = Computer, size = 9, human = Black, strength = Fierce, handicap = 0 }
 
 -- | A window with one tab, still on the page that asks what to play.
 onePage :: State
@@ -194,9 +196,52 @@ prop_thePageOffersEveryChoiceThereIs = withTests 1 . property $ do
   toggles === map fromIntegral choices
 
 -- | How many there are of each thing the page asks about, in the order
--- the page asks.
+-- the page asks, for a game on this machine.
 choices :: [Int]
-choices = [length boardWidths, 2, length strengths, length handicaps]
+choices =
+  [length places, length boardWidths, 2, length strengths, length handicaps]
+
+-- | The same page, asking about a game on the server instead.
+onlinePage :: State
+onlinePage = next onePage (InSetup 1 (ChosePlace Online))
+
+prop_thePageAsksOnlyWhatThePlaceItIsAboutCanAnswer :: Property
+prop_thePageAsksOnlyWhatThePlaceItIsAboutCanAnswer =
+  withTests 1 . property $ do
+    -- A game somebody else pairs settles the colour, the opponent and
+    -- the handicap on the other side, so those rows are not there at
+    -- all. A row that did nothing would be worse than no row.
+    (rows, groups, titles) <- evalIO . built onlinePage $ \widget' -> do
+      rows   <- descendantsOf Adw.ActionRow widget'
+      groups <- descendantsOf Adw.ToggleGroup widget'
+      titles <- traverse Adw.preferencesRowGetTitle rows
+      pure (length rows, length groups, titles)
+    -- Where to play, which board, and who the player is.
+    rows === 3
+    -- The account row has a button rather than a group of toggles.
+    groups === 2
+    titles === ["Play", "Play on", "Account"]
+
+prop_thePageSaysWhetherAnybodyIsSignedIn :: Property
+prop_thePageSaysWhetherAnybodyIsSignedIn = withTests 1 . property $ do
+  -- The line is on the row rather than anywhere else, because the row
+  -- is where the button that changes it is.
+  let signedInAs name = next onlinePage (SignedInAs (Right name))
+  out <- evalIO (subtitlesOf onlinePage)
+  inn <- evalIO (subtitlesOf (signedInAs "hikaru"))
+  bad <- evalIO
+    (subtitlesOf (next onlinePage (SignedInAs (Left "it was refused"))))
+  out === ["Not signed in"]
+  inn === ["Signed in as hikaru"]
+  bad === ["it was refused"]
+
+-- | What the rows of a page say under their titles, leaving out the
+-- rows that say nothing.
+subtitlesOf :: State -> IO [Text]
+subtitlesOf state = built state $ \widget' -> do
+  rows <- descendantsOf Adw.ActionRow widget'
+  said <- traverse Adw.actionRowGetSubtitle rows
+  pure [ line | Just line <- said, not (Text.null line) ]
 
 prop_startingAGameTurnsThePageIntoABoard :: Property
 prop_startingAGameTurnsThePageIntoABoard = withTests 1 . property $ do
