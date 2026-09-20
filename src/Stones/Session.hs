@@ -29,6 +29,7 @@ module Stones.Session
   , playable
   , canUndo
   , canTalk
+  , canPlayAgain
   , settling
   , deadIn
   , canAccept
@@ -56,6 +57,7 @@ import           Go.Board                       ( group
 import           Go.Game
 import           Go.Types
 import           Stones.Opponent
+import           Stones.Setup                   ( Setup(..) )
 
 -- | Where a game's opponent is up to.
 --
@@ -86,6 +88,9 @@ data Session = Session
   , standing :: Standing
   , human    :: Color
     -- ^ The colour the player at this window has in this game.
+  , setup    :: Setup
+    -- ^ What this game was started from, so that it can be started
+    -- over with the same answers rather than with the page's.
   , note     :: Maybe Note
     -- ^ Something to say about this game, if there is anything.
   , said     :: [Chat]
@@ -135,16 +140,17 @@ data SessionEvent
 -- game never ends the program, and nothing here answers with it.
 type Step = Transition Session SessionEvent
 
--- | A game on a board this wide, waiting for an opponent.
-starting :: Color -> Int -> Session
-starting human n = Session { game     = newGame n
-                           , standing = Starting
-                           , human    = human
-                           , note     = Nothing
-                           , said     = []
-                           , clock    = Nothing
-                           , dead     = Nothing
-                           }
+-- | A game set up like this, waiting for an opponent.
+starting :: Setup -> Session
+starting setup = Session { game     = newGame setup.size
+                         , standing = Starting
+                         , human    = setup.human
+                         , setup    = setup
+                         , note     = Nothing
+                         , said     = []
+                         , clock    = Nothing
+                         , dead     = Nothing
+                         }
 
 -- | The opponent this game was waiting for is here.
 --
@@ -301,6 +307,20 @@ humanMove session move = case ready session of
     Right game
       | finished game -> telling session { game = game } them [Moved move, Counting]
       | otherwise     -> telling session { game = game } them [Moved move, Asked]
+
+-- | Can this game be started over?
+--
+-- A program on this machine can be stopped and started again whenever
+-- anybody likes, and the only thing lost is a game against a program.
+-- Somebody at the other end of a server is in the middle of a game,
+-- and walking out of one is not starting over, it is leaving. So a
+-- game against one of those waits until it has ended.
+canPlayAgain :: Session -> Bool
+canPlayAgain session = case session.standing of
+  -- Nothing to start over. It has not started.
+  Starting -> False
+  Gone _   -> True
+  Here it  -> finished session.game || not it.talks
 
 -- | Is there anybody on the other side to talk to?
 --

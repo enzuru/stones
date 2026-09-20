@@ -53,6 +53,11 @@ silent = Opponent { name  = "nobody"
                   , talks = True
                   }
 
+-- | One that is a program on this machine, which can be stopped and
+-- started again whenever anybody likes.
+program :: Opponent
+program = silent { name = "GNU Go", talks = False }
+
 -- | A source of opponents that hands out the same silent one.
 source :: Opponents
 source = Opponents { open  = \_ -> pure (Right silent)
@@ -91,6 +96,12 @@ namesOf state event = map fst (jobsOf (commandOf (update' state event)))
 commandOf :: Transition state event -> Cmd event
 commandOf (Transition _ cmd) = cmd
 commandOf Exit               = none
+
+
+-- | A game set up on a board this wide, as this colour, against a
+-- program on this machine.
+board :: Color -> Int -> Setup
+board side n = defaultSetup { against = Computer, size = n, human = side }
 
 -- | A window with nothing open in it, whose page asks for a 9x9 game
 -- as Black.
@@ -281,7 +292,7 @@ prop_anOpponentThatWillNotStartBreaksOnlyItsOwnTab = withTests 1 . property $ do
 
 -- | A game against the silent opponent, ready for the player to move.
 inPlay :: Session
-inPlay = landed (opened silent (starting Black 9))
+inPlay = landed (opened silent (starting (board Black 9)))
 
 -- | The game a transition leaves behind.
 landed :: Step -> Session
@@ -294,10 +305,10 @@ onceMore session event = landed (step session event)
 
 prop_theTitleSaysWhoseTurnItIs :: Property
 prop_theTitleSaysWhoseTurnItIs = withTests 1 . property $ do
-  stateOf (starting Black 9) === "Starting\8230"
+  stateOf (starting (board Black 9)) === "Starting\8230"
   stateOf inPlay === "Your move"
   stateOf (onceMore inPlay (Clicked (Coord 3 3))) === "Thinking\8230"
-  stateOf (couldNotOpen "gone" (starting Black 9)) === "Stopped"
+  stateOf (couldNotOpen "gone" (starting (board Black 9))) === "Stopped"
 
 prop_aTabOnItsPageSaysWhatItIsAskingFor :: Property
 prop_aTabOnItsPageSaysWhatItIsAskingFor = withTests 1 . property $ do
@@ -324,6 +335,63 @@ prop_theTitleSaysHowTheGameEnded = withTests 1 . property $ do
   stateOf theirs === opponentOf theirs <> " resigned"
   stateOf theirs === "nobody resigned"
   stateOf mine === "You resigned"
+
+-- * Starting over
+-------------------
+
+prop_startingOverAsksForWhatTheGameWasStartedFrom :: Property
+prop_startingOverAsksForWhatTheGameWasStartedFrom =
+  withTests 1 . property $ do
+    -- What the game was started from, not what the page is asking for
+    -- now. Somebody who changed the page and then pressed this on an
+    -- old game meant the old game.
+    asked <- evalIO (newIORef [])
+    let noting = source
+          { open = \setup -> Right program <$ modifyIORef' asked (<> [setup])
+          }
+        started' = next (started 1 (next (startingState noting asking) NewTabPressed))
+                        (TabOpened 1 (Right program))
+        -- The page of a second tab is changed to something else, which
+        -- is what the window would start next.
+        moved = next (next started' NewTabPressed) (InSetup 2 (ChoseBoard 19))
+    _    <- ran moved (AgainPressed 1)
+    went <- evalIO (readIORef asked)
+    went === [asking]
+
+prop_startingOverLetsTheOldOpponentGo :: Property
+prop_startingOverLetsTheOldOpponentGo = property $ do
+  -- On a server an opponent left running is a board somebody else is
+  -- still sitting at.
+  (counting', counts) <- evalIO countingSource
+  let playing = next (started 1 (next (startingState counting' asking) NewTabPressed))
+                     (TabOpened 1 (Right silent { talks = False }))
+  _           <- ran playing (AgainPressed 1)
+  (_, back) <- evalIO (readIORef counts)
+  back === 1
+
+prop_startingOverPutsAFreshGameInTheSameTab :: Property
+prop_startingOverPutsAFreshGameInTheSameTab = withTests 1 . property $ do
+  let against = next (started 1 (next empty' NewTabPressed))
+                     (TabOpened 1 (Right program))
+      played  = next against (InTab 1 (Clicked (Coord 3 3)))
+      afresh  = next played (AgainPressed 1)
+  -- The board is empty again and the tab is the same tab.
+  map fst afresh.openTabs === [1]
+  fmap (capturedBy Black . (.captures) . (.game)) (gameIn 1 afresh) === Just 0
+  fmap (stateOf) (gameIn 1 afresh) === Just "Starting\8230"
+  -- And it runs under the tab's own name, so closing the tab stops it.
+  namesOf played (AgainPressed 1) === [Nothing, Just "finding game-1"]
+
+prop_startingOverDoesNothingToAGameSomebodyIsWaitingOn :: Property
+prop_startingOverDoesNothingToAGameSomebodyIsWaitingOn =
+  withTests 1 . property $ do
+    -- The button is greyed, so this only arrives if something else
+    -- sends it, and the answer is the same either way.
+    canPlayAgain inPlay === False
+    null (jobsOf (commandOf (update' oneGame (AgainPressed 1)))) === True
+    -- And a tab that is still a page has no game to start over.
+    null (jobsOf (commandOf (update' (next empty' NewTabPressed) (AgainPressed 1))))
+      === True
 
 -- * Talking
 -------------
@@ -638,7 +706,7 @@ prop_theSubtitleCarriesTheNumbers :: Property
 prop_theSubtitleCarriesTheNumbers = withTests 1 . property $ do
   aboutGame inPlay === capturesOf inPlay
   capturesOf inPlay === "9\215\&9  \183  Black 0  \183  White 0"
-  capturesOf (starting White 19) === "19\215\&19  \183  Black 0  \183  White 0"
+  capturesOf (starting (board White 19)) === "19\215\&19  \183  Black 0  \183  White 0"
 
 prop_theSubtitleGivesWayToNews :: Property
 prop_theSubtitleGivesWayToNews = withTests 1 . property $ do
@@ -653,7 +721,7 @@ prop_theSubtitleGivesWayToNews = withTests 1 . property $ do
       onTop  = onceMore back (Clicked (Coord 3 3))
   aboutGame onTop === describeIllegal Occupied
 
-  aboutGame (couldNotOpen "no such program" (starting Black 9))
+  aboutGame (couldNotOpen "no such program" (starting (board Black 9)))
     === "no such program"
 
 prop_aWindowWithNoGameShowingSaysSo :: Property

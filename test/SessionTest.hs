@@ -40,6 +40,7 @@ import           Go.Game
 import           Go.Types
 import           Stones.Opponent
 import           Stones.Session
+import           Stones.Setup
 
 -- | An opponent that takes everything and says nothing.
 silent :: Opponent
@@ -62,6 +63,12 @@ recording = do
        , readIORef book
        )
 
+
+-- | A game set up on a board this wide, as this colour, against a
+-- program on this machine.
+board :: Color -> Int -> Setup
+board side n = defaultSetup { against = Computer, size = n, human = side }
+
 -- | A 9x9 game as this colour against this opponent, from the moment
 -- it opens.
 --
@@ -69,7 +76,7 @@ recording = do
 -- White, so the tests below start from the step rather than from the
 -- game it leaves behind.
 opening :: Color -> Opponent -> Step
-opening side them = opened them (starting side 9)
+opening side them = opened them (starting (board side 9))
 
 -- | The game an opened one leaves behind, for the tests that say
 -- nothing.
@@ -133,7 +140,7 @@ asked session event = asked' (step session event)
 
 prop_aStartedGameIsThePlayersToMove :: Property
 prop_aStartedGameIsThePlayersToMove = withTests 1 . property $ do
-  let waiting = starting Black 9
+  let waiting = starting (board Black 9)
   playable waiting === False
   boardSize waiting.game === 9
   playable game === True
@@ -145,9 +152,9 @@ prop_aGameListensOnlyWhileItHasSomebodyToListenTo :: Property
 prop_aGameListensOnlyWhileItHasSomebodyToListenTo =
   withTests 1 . property $ do
     -- The window keeps a stream open for exactly these.
-    named (listening (starting Black 9)) === Nothing
+    named (listening (starting (board Black 9))) === Nothing
     named (listening game) === Just "nobody"
-    named (listening (couldNotOpen "gone" (starting Black 9))) === Nothing
+    named (listening (couldNotOpen "gone" (starting (board Black 9)))) === Nothing
   where named = fmap (.name)
 
 -- * What a game says
@@ -161,7 +168,7 @@ prop_aMoveIsSaidAndTheTurnIsHandedOver = withTests 1 . property $ do
 prop_theOpponentIsAskedToOpenWhenThePlayerHasWhite :: Property
 prop_theOpponentIsAskedToOpenWhenThePlayerHasWhite =
   withTests 1 . property $ do
-    said <- saying (\them -> opened them (starting White 13)) []
+    said <- saying (\them -> opened them (starting (board White 13))) []
     -- Opening the game is itself a step, and this is the one thing it
     -- says.
     said === [Asked]
@@ -216,7 +223,7 @@ prop_nothingIsSaidWhenItIsNotThePlayersTurn = withTests 1 . property $ do
   let played = after game (Clicked (Coord 3 3))
   asked played (Clicked (Coord 4 4)) === False
   asked played ResignPressed === False
-  asked (starting Black 9) (Clicked (Coord 3 3)) === False
+  asked (starting (board Black 9)) (Clicked (Coord 3 3)) === False
   asked game UndoPressed === False
 
 prop_aTellThatWillNotBeHeardLosesTheOpponent :: Property
@@ -284,6 +291,30 @@ prop_movesComingOffOverThereComeOffHere = withTests 1 . property $ do
 -- * Talking
 -------------
 
+prop_aGameRemembersWhatItWasStartedFrom :: Property
+prop_aGameRemembersWhatItWasStartedFrom = withTests 1 . property $ do
+  -- So that it can be started over with the same answers rather than
+  -- with whatever the page happens to be asking for by then.
+  let wanted = board White 13
+  (starting wanted).setup === wanted
+  (after (gameWith silent) (Clicked (Coord 3 3))).setup === board Black 9
+
+prop_aProgramCanBeStartedOverAndSomebodyElseCannot :: Property
+prop_aProgramCanBeStartedOverAndSomebodyElseCannot =
+  withTests 1 . property $ do
+    -- A program on this machine can be stopped and started again
+    -- whenever anybody likes. Somebody at the other end of a server is
+    -- in the middle of a game, and walking out of one is not starting
+    -- over, it is leaving.
+    canPlayAgain (gameWith silent { talks = False }) === True
+    canPlayAgain game === False
+    -- Once it has ended there is nobody left waiting on it.
+    canPlayAgain (after game ResignPressed) === True
+    -- Nothing that has not started can be started over, and one whose
+    -- opponent never arrived has nothing to leave.
+    canPlayAgain (starting (board Black 9)) === False
+    canPlayAgain (couldNotOpen "gone" (starting (board Black 9))) === True
+
 prop_thereIsOnlySomebodyToTalkToWhenThereIsSomebodyThere :: Property
 prop_thereIsOnlySomebodyToTalkToWhenThereIsSomebodyThere =
   withTests 1 . property $ do
@@ -291,8 +322,8 @@ prop_thereIsOnlySomebodyToTalkToWhenThereIsSomebodyThere =
     -- window playing one shows no pane to say it in.
     canTalk game === True
     canTalk (gameWith silent { talks = False }) === False
-    canTalk (starting Black 9) === False
-    canTalk (couldNotOpen "gone" (starting Black 9)) === False
+    canTalk (starting (board Black 9)) === False
+    canTalk (couldNotOpen "gone" (starting (board Black 9))) === False
 
 prop_anEmptyLineIsNotSomethingToSay :: Property
 prop_anEmptyLineIsNotSomethingToSay = withTests 1 . property $ do
@@ -572,7 +603,7 @@ prop_anArrivalAfterTheEndChangesNothing = withTests 1 . property $ do
 
 prop_aGameThatCouldNotStartSaysSo :: Property
 prop_aGameThatCouldNotStartSaysSo = withTests 1 . property $ do
-  let dead = couldNotOpen "no such program" (starting Black 9)
+  let dead = couldNotOpen "no such program" (starting (board Black 9))
   brokenBecause dead === Just "no such program"
   playable dead === False
   canUndo dead === False
@@ -584,7 +615,7 @@ prop_aGameThatCouldNotStartSaysSo = withTests 1 . property $ do
 prop_whatAGameIsPlayedOn :: Property
 prop_whatAGameIsPlayedOn = withTests 1 . property $ do
   sessionSize game === 9
-  sessionSize (starting Black 19) === 19
+  sessionSize (starting (board Black 19)) === 19
 
 prop_whereTheOtherSideSaysTheGameIsIsWhereItIs :: Property
 prop_whereTheOtherSideSaysTheGameIsIsWhereItIs = withTests 1 . property $ do

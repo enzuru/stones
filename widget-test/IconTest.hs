@@ -109,6 +109,8 @@ prop_theIconsTheHeaderBarAsksForAreAllThere = withTests 1 . property $ do
   theme <- evalIO (runUI themeHere)
   let wanted =
         [ "edit-undo-symbolic"
+          -- Play again, with the same settings.
+        , "view-refresh-symbolic"
         , "media-skip-forward-symbolic"
           -- The same button as the one above, once the game has
           -- stopped and what is left is agreeing the count.

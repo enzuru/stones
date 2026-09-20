@@ -173,6 +173,8 @@ data Event
   | TabsReordered (Vector Text)
   | ResignChosen
     -- ^ Give up the game showing, which is what the menu means by it.
+  | AgainPressed TabId
+    -- ^ Start this tab's game over, with what it was started from.
   | AsideGone Text
     -- ^ Something said over the board has left the screen.
   | ChatToggled Bool
@@ -236,6 +238,10 @@ update' state = \case
                                          tab
                                          (`step` event)
 
+  AgainPressed tab             -> case lookup tab state.openTabs of
+    Just (Playing session) | canPlayAgain session -> again state tab session
+    _                                             -> Transition state none
+
   AsideGone gone               -> Transition
     state { asides = [ aside | aside <- state.asides, aside.key /= gone ] }
     none
@@ -261,6 +267,23 @@ update' state = \case
   ResignChosen                 -> case shownGame state of
     Just (tab, _) -> inGame state tab (`step` ResignPressed)
     Nothing       -> Transition state none
+
+-- | Start a tab's game over, with what it was started from rather than
+-- with whatever the page is asking for now.
+--
+-- The opponent that was playing is let go, because the game it was
+-- playing is over as far as this window is concerned, and on a server
+-- an opponent left running is a board somebody else is still sitting
+-- at. Then the same thing is asked for again: another engine on this
+-- machine, or another game on the server, which is what a rematch is.
+again :: State -> TabId -> Session -> Transition State Event
+again state tab session = Transition
+  (replacing state tab (Playing (starting session.setup)))
+  (  release state.opponents (Playing session)
+  <> keyed
+       (findingIn tab)
+       (perform (Just . TabOpened tab <$> state.opponents.open session.setup))
+  )
 
 -- | Something said about a game the player is not looking at goes
 -- where they will see it.
@@ -330,7 +353,7 @@ inSetup :: State -> TabId -> SetupEvent -> Transition State Event
 inSetup state tab event = case lookup tab state.openTabs of
   Just (Choosing setup) -> case event of
     StartPressed -> Transition
-      (replacing state tab (Playing (starting setup.human setup.size)))
+      (replacing state tab (Playing (starting setup)))
         -- What was started is what the next tab asks for first.
         { opening = setup
         }
@@ -571,7 +594,13 @@ header state = container
       )
   ]
   [ headerBarStart
-    (action state "edit-undo-symbolic" "Undo" canUndo UndoPressed)
+    (action state "edit-undo-symbolic" "Undo" canUndo (`InTab` UndoPressed))
+  , headerBarStart
+    (action state
+            "view-refresh-symbolic"
+            "Play again, with the same settings"
+            canPlayAgain
+            AgainPressed)
   -- Packed from the right edge inward, so the menu is the button in
   -- the corner, which is where a GNOME program keeps it.
   , headerBarEnd (mainMenu state)
@@ -612,12 +641,12 @@ finishing state
     "object-select-symbolic"
     "Accept the stones marked dead and count the game"
     canAccept
-    AcceptPressed
+    (`InTab` AcceptPressed)
   | otherwise = action state
                        "media-skip-forward-symbolic"
                        "Pass, giving the move to the other player"
                        playable
-                       Passed
+                       (`InTab` Passed)
 
 -- | A button in the header bar that does something to the game
 -- showing.
@@ -626,7 +655,12 @@ finishing state
 -- a window with no tabs, so both have the buttons and both have them
 -- greyed.
 action
-  :: State -> Text -> Text -> (Session -> Bool) -> SessionEvent -> Widget Event
+  :: State
+  -> Text
+  -> Text
+  -> (Session -> Bool)
+  -> (TabId -> Event)
+  -> Widget Event
 action state icon tip enabled event = case shownGame state of
   Nothing -> widget
     Gtk.Button
@@ -636,7 +670,7 @@ action state icon tip enabled event = case shownGame state of
     [ #iconName := icon
     , #tooltipText := tip
     , #sensitive := enabled session
-    , on #clicked (InTab tab event)
+    , on #clicked (event tab)
     ]
 
 -- | The menu in the corner.
