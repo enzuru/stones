@@ -160,8 +160,10 @@ prop_aConnectionThatWillNotTakeItIsARefusal = withTests 1 . property $ do
 prop_aMoveThatArrivesComesBackAsOne :: Property
 prop_aMoveThatArrivesComesBackAsOne = withTests 1 . property $ do
   (it, them) <- evalIO joined
-  evalIO (it.arrive (Right (moveEvent 0 3 3)))
-  evalIO (it.arrive (Right (moveEvent 1 15 3)))
+  -- Numbered the way the server numbers them, which is a count: the
+  -- first move of the game is move number one.
+  evalIO (it.arrive (Right (moveEvent 1 3 3)))
+  evalIO (it.arrive (Right (moveEvent 2 15 3)))
   arrived <- evalIO (heardFrom them 2)
   arrived
     === Just
@@ -190,7 +192,7 @@ prop_whatIsNotAboutThisGameIsNotHeard = withTests 1 . property $ do
   -- And the frames the connection needs for itself are not events at
   -- all.
   evalIO (it.arrive (Right Pong))
-  evalIO (it.arrive (Right (moveEvent 0 3 3)))
+  evalIO (it.arrive (Right (moveEvent 1 3 3)))
   arrived <- evalIO (heardFrom them 1)
   arrived === Just [Played Black (Play (Coord 3 3))]
 
@@ -210,8 +212,10 @@ prop_theCountOfMovesFollowsTheBoard = withTests 1 . property $ do
   -- said, so the count has to follow every move, this program's own
   -- included, because the server says them all.
   (it, them) <- evalIO joined
-  evalIO (it.arrive (Right (moveEvent 0 3 3)))
-  evalIO (it.arrive (Right (moveEvent 1 15 3)))
+  -- Numbered the way the server numbers them, which is a count: the
+  -- first move of the game is move number one.
+  evalIO (it.arrive (Right (moveEvent 1 3 3)))
+  evalIO (it.arrive (Right (moveEvent 2 15 3)))
   _ <- evalIO (heardFrom them 2)
   _ <- evalIO (them.tell (Said "good game"))
   packets <- evalIO it.sent
@@ -252,7 +256,7 @@ prop_aHandicapGameGetsItsColoursTheRightWayRound =
     -- colour in the game the wrong way round.
     (it, them) <- evalIO joined
     evalIO (it.arrive (Right handicapGame))
-    evalIO (it.arrive (Right (moveEvent 0 3 3)))
+    evalIO (it.arrive (Right (moveEvent 1 3 3)))
     arrived <- evalIO (heardFrom them 2)
     arrived
       === Just

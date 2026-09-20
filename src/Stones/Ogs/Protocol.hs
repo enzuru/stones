@@ -178,7 +178,8 @@ resultFrom body = do
   let side = if winner == black then "B" else "W"
   Just (side <> "+" <> outcome)
 
--- | Whose move that was, in a game where this colour moved first.
+-- | Whose move that was, in a game where this colour moved first,
+-- counting the first move of the game as nought.
 --
 -- The server says which move it was and not who made it, so it has to
 -- be worked out, and the count is all there is to work it out from.
@@ -345,7 +346,11 @@ incoming table name arguments = do
     "move" -> do
       number <- field "move_number" body >>= asInt
       move   <- field "move" body
-      Just (either Lost (Played (moverOf table.opens number)) (decodeMove move))
+      -- The server counts the moves rather than numbering them from
+      -- nothing: the first move of a game arrives as move number one,
+      -- and it is the opener's. So the count comes down by one before
+      -- it says anything about whose move it was.
+      Just (either Lost (Played (moverOf table.opens (number - 1))) (decodeMove move))
     "chat" -> do
       line   <- field "line" body
       person <- field "username" line >>= asText

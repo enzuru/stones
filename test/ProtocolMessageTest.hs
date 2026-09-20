@@ -159,12 +159,39 @@ prop_whatTheServerNeedsNoTellingOfIsNotSent = withTests 1 . property $ do
 
 prop_aMoveArrivesAsAMoveWithAColourOnIt :: Property
 prop_aMoveArrivesAsAMoveWithAColourOnIt = withTests 1 . property $ do
-  incoming table "game/1234/move" [moveEvent 0 (arriving 3 3)]
+  -- The server counts the moves rather than numbering them from
+  -- nothing, so the first move of the game is number one.
+  incoming table "game/1234/move" [moveEvent 1 (arriving 3 3)]
     === Just (Played Black (Play (Coord 3 3)))
-  incoming table "game/1234/move" [moveEvent 1 (arriving 15 3)]
+  incoming table "game/1234/move" [moveEvent 2 (arriving 15 3)]
     === Just (Played White (Play (Coord 15 3)))
-  incoming table "game/1234/move" [moveEvent 4 (arriving (-1) (-1))]
+  incoming table "game/1234/move" [moveEvent 5 (arriving (-1) (-1))]
     === Just (Played Black Pass)
+
+prop_theFirstMoveOfAGameBelongsToWhoeverOpenedIt :: Property
+prop_theFirstMoveOfAGameBelongsToWhoeverOpenedIt =
+  withTests 1 . property $ do
+    -- Word for word what online-go.com sent on the first move of the
+    -- first game this program ever played there. Read as a number
+    -- counted from nothing rather than as a count, it made the move
+    -- White's: the player's own stone came back as the other side's,
+    -- the rules refused a stone on a point that already had one, and
+    -- the game stopped on move one.
+    let asSent = object
+          [ "game_id" .= (1234 :: Int)
+          , "move_number" .= (1 :: Int)
+          , "move" .= toJSON [4, 4, 5592 :: Int]
+          ]
+    incoming table "game/1234/move" [asSent]
+      === Just (Played Black (Play (Coord 4 4)))
+    -- And in a handicap game, where White is the one who opens.
+    let handicap = Table { identifier = 1234
+                         , played     = 10
+                         , opens      = White
+                         , me         = 77
+                         }
+    incoming handicap "game/1234/move" [asSent]
+      === Just (Played White (Play (Coord 4 4)))
 
 prop_aMoveAboutAnotherGameIsNotAboutThisOne :: Property
 prop_aMoveAboutAnotherGameIsNotAboutThisOne = withTests 1 . property $ do
