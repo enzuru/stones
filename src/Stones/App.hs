@@ -37,6 +37,9 @@ module Stones.App
   )
 where
 
+import           Control.Concurrent             ( threadDelay )
+import           Control.Monad                  ( forever )
+import           Control.Monad.IO.Class         ( liftIO )
 import           Data.Bifunctor                 ( bimap )
 import           Data.List                      ( find )
 import           Data.Maybe                     ( isJust
@@ -65,6 +68,7 @@ import           GI.Gtk.Declarative.Adwaita.ToolbarView
                                                 , toolbarTop
                                                 )
 import           GI.Gtk.Declarative.App.Simple
+import           Pipes                          ( Producer )
 import qualified Pipes
 
 import           Go.Game
@@ -125,6 +129,9 @@ data Event
   | TabsReordered (Vector Text)
   | ResignChosen
     -- ^ Give up the game showing, which is what the menu means by it.
+  | Ticking
+    -- ^ A second has gone by, and every clock that is going down goes
+    -- down by one.
   | Closed
 
 -- | A window with no games in it yet.
@@ -163,6 +170,14 @@ update' state = \case
 
   TabsReordered keys           -> Transition state { openTabs = inOrder } none
     where inOrder = mapMaybe (withId state) (Vector.toList keys)
+
+  -- Every game at once, rather than one stream per tab. A second is
+  -- the same second in all of them.
+  Ticking                      -> Transition state { openTabs = counted } none
+    where
+      counted = [ (tab, onward held) | (tab, held) <- state.openTabs ]
+      onward (Playing session) = Playing (tick session)
+      onward held              = held
 
   -- The menu acts on whatever is showing, which is what a menu does.
   -- The item is greyed when there is no game to give up, so this only
@@ -325,9 +340,24 @@ shownGame state = case shown state of
 listeners :: State -> [Sub Event]
 listeners state =
   [ InTab tab . Arrived <$> sub (heardFrom tab) them.hear
-  | (tab, Playing session) <- state.openTabs
-  , Just them <- [listening session]
-  ]
+    | (tab, Playing session) <- state.openTabs
+    , Just them <- [listening session]
+    ]
+    <> [ Ticking <$ sub "clock" seconds | any ticked state.openTabs ]
+ where
+  ticked (_, Playing session) = counting session
+  ticked _                    = False
+
+-- | A second, over and over.
+--
+-- One stream for the whole window rather than one per game, because a
+-- second is the same second in every tab, and because a window with no
+-- clock anywhere in it should not be woken at all. It starts when the
+-- first clock starts and stops when the last one does: the loop keeps
+-- a stream for as long as its name is in the list, and this name is
+-- there only while something is being timed.
+seconds :: Producer () IO ()
+seconds = forever (liftIO (threadDelay 1000000) >> Pipes.yield ())
 
 -- | The name the stream of one tab runs under.
 heardFrom :: TabId -> Text
@@ -472,7 +502,13 @@ aboutGame session = case session.standing of
     Just (Refused what) -> describeIllegal what
     Nothing             -> capturesOf session
 
--- | The board, and how many stones each player has taken.
+-- | The board, how many stones each player has taken, and, in a game
+-- that is timed, how long each has left.
+--
+-- Always in the same order, Black and then White, rather than whoever
+-- is to play first. The title above already says whose turn it is, and
+-- a line whose halves swap over every move is a line nobody can read
+-- at a glance.
 capturesOf :: Session -> Text
 capturesOf session =
   size'
@@ -483,7 +519,9 @@ capturesOf session =
  where
   captures = session.game.captures
   size' = let n = Text.pack (show (sessionSize session)) in n <> "\215" <> n
-  took side = Text.pack (show (capturedBy side captures))
+  took side =
+    Text.pack (show (capturedBy side captures)) <> maybe "" left (clockOf session side)
+  left time = "  " <> describeTime time
 
 -- | The games, one to a tab.
 gameTabs :: State -> Widget Event

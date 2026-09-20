@@ -278,6 +278,75 @@ prop_movesComingOffOverThereComeOffHere = withTests 1 . property $ do
   (after game (Arrived (Undid 5))).game.moves === []
   (after game (Arrived (Undid 0))).game.moves === []
 
+-- * The clock
+---------------
+
+-- | A clock with ten minutes each and Black to play.
+running :: Clock
+running = Clock { black   = Time { seconds = 600, periods = 0, each = 0 }
+                , white   = Time { seconds = 600, periods = 0, each = 0 }
+                , running = Just Black
+                }
+
+prop_aGameWithNoClockOnItShowsNone :: Property
+prop_aGameWithNoClockOnItShowsNone = withTests 1 . property $ do
+  -- Playing GNU Go, where nothing is timed and nothing pretends to be.
+  game.clock === Nothing
+  clockOf game Black === Nothing
+  counting game === False
+  -- And nothing is counted, so the window has no reason to be woken.
+  (tick game).clock === Nothing
+
+prop_aClockThatArrivesIsTheClockTheGameShows :: Property
+prop_aClockThatArrivesIsTheClockTheGameShows = withTests 1 . property $ do
+  let timed = after game (Arrived (Ticked running))
+  clockOf timed Black === Just running.black
+  clockOf timed White === Just running.white
+  counting timed === True
+  -- It is where the game stands and not something said, so nobody is
+  -- told about it and the board is left alone.
+  asked game (Arrived (Ticked running)) === False
+  timed.game.turn === game.game.turn
+
+prop_theSecondsInBetweenAreCountedHere :: Property
+prop_theSecondsInBetweenAreCountedHere = withTests 1 . property $ do
+  -- The server says where the clock is when somebody moves and says
+  -- nothing through the whole of a turn, which is when a player is
+  -- watching it.
+  let timed  = after game (Arrived (Ticked running))
+      onward = tick (tick (tick timed))
+  clockOf onward Black === Just Time { seconds = 597, periods = 0, each = 0 }
+  clockOf onward White === Just running.white
+
+prop_whatTheServerSaysIsTakenOverWhatWasCountedHere :: Property
+prop_whatTheServerSaysIsTakenOverWhatWasCountedHere =
+  withTests 1 . property $ do
+    -- The server is the one that decides. A clock counted along here
+    -- drifts, and every move is a chance to put it right.
+    let drifted = tick (tick (after game (Arrived (Ticked running))))
+        said    = running
+          { black = Time { seconds = 555, periods = 0, each = 0 } } :: Clock
+        settled = after drifted (Arrived (Ticked said))
+    clockOf settled Black === Just said.black
+
+prop_nobodyIsOnTheClockInAGameThatIsOver :: Property
+prop_nobodyIsOnTheClockInAGameThatIsOver = withTests 1 . property $ do
+  -- Two passes end it. Whatever the last thing the server said about
+  -- the clock was, it stops here.
+  let passed = after (after game Passed) (Arrived (Played White Pass))
+      timed  = after passed (Arrived (Ticked running))
+  counting timed === False
+  clockOf (tick timed) Black === Just running.black
+
+prop_aClockNobodyIsWaitingOnIsNotWorthWakingTheWindowFor :: Property
+prop_aClockNobodyIsWaitingOnIsNotWorthWakingTheWindowFor =
+  withTests 1 . property $ do
+    -- A paused game, or one that has not started, has a clock to show
+    -- and no seconds to take off it.
+    let paused = after game (Arrived (Ticked running { running = Nothing }))
+    clockOf paused Black === Just running.black
+    counting paused === False
+
 prop_aLostOpponentStopsTheGame :: Property
 prop_aLostOpponentStopsTheGame = withTests 1 . property $ do
   let broken = after game (Arrived (Lost "the pipe closed"))

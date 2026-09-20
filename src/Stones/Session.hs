@@ -28,6 +28,9 @@ module Stones.Session
   , ready
   , playable
   , canUndo
+  , tick
+  , counting
+  , clockOf
   , listening
   , opponentOf
   , sessionSize
@@ -78,6 +81,9 @@ data Session = Session
     -- ^ Something to say about this game, if there is anything.
   , said     :: [Chat]
     -- ^ What has been said about it, oldest first.
+  , clock    :: Maybe Clock
+    -- ^ How long each player has left, in a game that is counted.
+    -- A game nobody is timing has none, and shows none.
   }
 
 -- | What the window has to say about a game beyond whose turn it is.
@@ -120,6 +126,7 @@ starting human n = Session { game     = newGame n
                            , human    = human
                            , note     = Nothing
                            , said     = []
+                           , clock    = Nothing
                            }
 
 -- | The opponent this game was waiting for is here.
@@ -145,6 +152,42 @@ opponentOf session = case session.standing of
   Starting -> "starting"
   Here it  -> it.name
   Gone _   -> "nobody"
+
+-- | A second going by.
+--
+-- The server says where the clocks are when a move is made and says
+-- nothing in between, so a clock that was only ever set from the
+-- server would sit still through the whole of somebody's turn, which
+-- is the one time a player is watching it. This counts those seconds.
+-- Whatever the server says next is taken over the top, because the
+-- server is the one that decides.
+--
+-- A game that has ended is left alone. Nobody is on the clock in a
+-- game that is over, whatever the last thing the server said about it
+-- was.
+tick :: Session -> Session
+tick session
+  | finished session.game = session
+  | otherwise             = session { clock = ticking <$> session.clock }
+
+-- | Is there a clock going down in this game?
+--
+-- This is what says whether the seconds are worth counting at all. A
+-- game with no clock, or one that has ended, or one that is paused,
+-- does not need a stream waking the window once a second.
+counting :: Session -> Bool
+counting session = case session.clock of
+  Just clock | not (finished session.game) -> isJust clock.running
+  _ -> False
+
+-- | One player's clock, if the game has one.
+clockOf :: Session -> Color -> Maybe Time
+clockOf session color = pick <$> session.clock
+ where
+  pick :: Clock -> Time
+  pick clock = case color of
+    Black -> clock.black
+    White -> clock.white
 
 -- | The opponent of a game that is still listening, which is the one
 -- the window keeps a subscription open for.
@@ -280,6 +323,7 @@ arrived session = \case
   Spoke person text ->
     stay session { said = session.said <> [Chat person text] }
   Undid count       -> tookBack session count
+  Ticked clock      -> stay session { clock = Just clock }
   Counted out       -> stay session { note = Just (Result out) }
   Lost why          -> stay session { standing = Gone why }
 

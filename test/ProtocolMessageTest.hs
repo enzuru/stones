@@ -29,8 +29,12 @@ import qualified Hedgehog.Range                as Range
 
 import           Go.Types
 import           Stones.Ogs.Protocol
-import           Stones.Opponent                ( Heard(..)
+import qualified Data.Aeson.Key                as Key
+import qualified Data.Aeson.KeyMap             as KeyMap
+import           Stones.Opponent                ( Clock(..)
+                                                , Heard(..)
                                                 , Opening(..)
+                                                , Time(..)
                                                 , Told(..)
                                                 )
 
@@ -202,13 +206,91 @@ prop_anUndoTheOtherPlayerAgreedToComesBackAsMovesOff =
 
 prop_whatThisProgramDoesNotActOnIsNothingToSay :: Property
 prop_whatThisProgramDoesNotActOnIsNothingToSay = withTests 1 . property $ do
-  -- The clock and the counting at the end are both still to come, and
-  -- until they are, an event about them is quietly none of this
-  -- program's business.
-  incoming table "game/1234/clock" [object []] === Nothing
+  -- The counting at the end is still to come, and until it is, an
+  -- event about it is quietly none of this program's business. So is
+  -- an event with nothing in it at all.
   incoming table "game/1234/phase" [String "play"] === Nothing
   incoming table "game/1234/removed_stones" [object []] === Nothing
   incoming table "game/1234/move" [] === Nothing
+
+-- * The clock
+---------------
+
+-- | What the server says about the clocks of a game with a time to
+-- think in and five short periods after it, with Black to play.
+--
+-- 77 is the player at this window, and Black in this game.
+clockEvent :: Value
+clockEvent = object
+  [ "game_id" .= (1234 :: Int)
+  , "current_player" .= (77 :: Int)
+  , "black_player_id" .= (77 :: Int)
+  , "white_player_id" .= (99 :: Int)
+  , "black_time" .= object
+    ["thinking_time" .= (301.5 :: Double), "periods" .= (5 :: Int), "period_time" .= (30 :: Int)]
+  , "white_time" .= object
+    ["thinking_time" .= (60 :: Int), "periods" .= (5 :: Int), "period_time" .= (30 :: Int)]
+  ]
+
+prop_aClockIsWhatEachSideHasLeftAndWhoseIsGoingDown :: Property
+prop_aClockIsWhatEachSideHasLeftAndWhoseIsGoingDown = withTests 1 . property $ do
+  case clockFrom clockEvent of
+    Nothing -> annotate "it read no clock at all" >> failure
+    Just clock -> do
+      -- Part of a second is not worth showing, and what is shown is
+      -- rounded down, so a clock never claims time that is not there.
+      clock.black === Time { seconds = 301, periods = 5, each = 30 }
+      clock.white === Time { seconds = 60, periods = 5, each = 30 }
+      -- Whose is going down comes from who the server says is to play,
+      -- against the two players it names in the same breath.
+      clock.running === Just Black
+  -- And it arrives at the game as a clock rather than as nothing.
+  incoming table "game/1234/clock" [clockEvent] === (Ticked <$> clockFrom clockEvent)
+
+prop_theOtherSideBeingToPlayIsTheOtherSidesClock :: Property
+prop_theOtherSideBeingToPlayIsTheOtherSidesClock = withTests 1 . property $ do
+  let theirs = replacing "current_player" (toJSON (99 :: Int)) clockEvent
+  (whoseTurn <$> clockFrom theirs) === Just (Just White)
+
+prop_aGameNobodyIsWaitingOnHasNeitherClockGoingDown :: Property
+prop_aGameNobodyIsWaitingOnHasNeitherClockGoingDown = withTests 1 . property $ do
+  -- Paused, which a correspondence game is for somebody's holiday.
+  let paused = replacing "paused_since" (toJSON (1700000000000 :: Int)) clockEvent
+  (whoseTurn <$> clockFrom paused) === Just Nothing
+  -- Or nobody to play at all, which is a game that has not started.
+  let nobody = replacing "current_player" Null clockEvent
+  (whoseTurn <$> clockFrom nobody) === Just Nothing
+
+prop_oneLotOfTimeAndNothingAfterItIsJustANumber :: Property
+prop_oneLotOfTimeAndNothingAfterItIsJustANumber = withTests 1 . property $ do
+  -- An absolute game, where the server writes the time as a number
+  -- rather than as an object, and there are no periods to come.
+  timeFrom (toJSON (125 :: Int)) === Just Time { seconds = 125, periods = 0, each = 0 }
+  -- A game counted some other way, where the parts this program does
+  -- not show are left out rather than guessed at. What is running is
+  -- still the time that is running.
+  timeFrom (object ["thinking_time" .= (45 :: Int), "skip_bonus" .= False])
+    === Just Time { seconds = 45, periods = 0, each = 0 }
+
+prop_aGameWithNoClockOnItShowsNoClock :: Property
+prop_aGameWithNoClockOnItShowsNoClock = withTests 1 . property $ do
+  -- Not every game is timed, and one that is not says nothing about
+  -- how long anybody has left. A window with no clock to show is
+  -- better than one showing a clock of zero.
+  clockFrom (object ["game_id" .= (1234 :: Int)]) === Nothing
+  clockFrom (object []) === Nothing
+  timeFrom (String "soon") === Nothing
+  incoming table "game/1234/clock" [object []] === Nothing
+
+-- | Whose clock is going down.
+whoseTurn :: Clock -> Maybe Color
+whoseTurn clock = clock.running
+
+-- | The same object with one field put in or changed.
+replacing :: Text -> Value -> Value -> Value
+replacing key held (Object fields) =
+  Object (KeyMap.insert (Key.fromText key) held fields)
+replacing _ _ other = other
 
 isLeft :: Either a b -> Bool
 isLeft = either (const True) (const False)

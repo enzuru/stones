@@ -22,6 +22,8 @@ module Stones.Ogs.Protocol
   , decodeStones
   , moverOf
   , openingFrom
+  , clockFrom
+  , timeFrom
   , outgoing
   , incoming
   )
@@ -33,7 +35,9 @@ import           Data.Aeson                     ( Value(..)
                                                 )
 import qualified Data.Aeson.Key                as Key
 import qualified Data.Aeson.Types              as Aeson
-import           Data.Scientific                ( toBoundedInteger )
+import           Data.Scientific                ( toBoundedInteger
+                                                , toRealFloat
+                                                )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import qualified Data.Vector                   as Vector
@@ -43,8 +47,10 @@ import           Go.Board                       ( coords
                                                 )
 import           Go.Game
 import           Go.Types
-import           Stones.Opponent                ( Heard(..)
+import           Stones.Opponent                ( Clock(..)
+                                                , Heard(..)
                                                 , Opening(..)
+                                                , Time(..)
                                                 , Told(..)
                                                 )
 
@@ -58,6 +64,17 @@ fieldOf key = \case
 asWhole :: Value -> Maybe Int
 asWhole = \case
   Number n -> toBoundedInteger n
+  _        -> Nothing
+
+-- | A number of seconds, rounded down.
+--
+-- Times come back fractional, and part of a second is not worth
+-- showing. Down rather than to the nearest, because a clock that says
+-- a second more than there is says the wrong thing at the end, which
+-- is the end that matters.
+asSeconds :: Value -> Maybe Int
+asSeconds = \case
+  Number n -> Just (max 0 (floor (toRealFloat n :: Double)))
   _        -> Nothing
 
 -- | Text, if that is what this is.
@@ -184,6 +201,52 @@ openingFrom player body = do
   standing board =
     [ (color, point) | point <- coords board, Just color <- [stoneAt board point] ]
 
+-- | One player's clock, out of what the server says about it.
+--
+-- A game can be counted in several ways and the server writes each of
+-- them differently. A plain number is a game with one lot of time and
+-- nothing after it. An object holds the time to think in, and, if the
+-- game has them, the short periods that follow. The parts of the other
+-- ways that do not fit are left out rather than guessed at: what is
+-- shown is then the time that is running, which is the part a player
+-- is watching.
+timeFrom :: Value -> Maybe Time
+timeFrom = \case
+  Number n -> do
+    seconds <- asSeconds (Number n)
+    Just Time { seconds = seconds, periods = 0, each = 0 }
+  body@(Object _) -> do
+    seconds <- fieldOf "thinking_time" body >>= asSeconds
+    Just Time
+      { seconds = seconds
+      , periods = maybe 0 id (fieldOf "periods" body >>= asWhole)
+      , each    = maybe 0 id (fieldOf "period_time" body >>= asSeconds)
+      }
+  _ -> Nothing
+
+-- | Both clocks, out of what the server says when one of them moves.
+--
+-- Whose is going down is worked out from who the server says is to
+-- play, against the two players it names, rather than from whose turn
+-- this program thinks it is. A game nobody is waiting on, because it
+-- is paused or has not started, has neither running.
+clockFrom :: Value -> Maybe Clock
+clockFrom body = do
+  black <- fieldOf "black_time" body >>= timeFrom
+  white <- fieldOf "white_time" body >>= timeFrom
+  Just Clock { black = black, white = white, running = whose }
+ where
+  whose = case fieldOf "paused_since" body of
+    Just (Number _) -> Nothing
+    _               -> do
+      player <- fieldOf "current_player" body >>= asWhole
+      let sideOf key = fieldOf key body >>= asWhole
+      if sideOf "black_player_id" == Just player
+        then Just Black
+        else if sideOf "white_player_id" == Just player
+          then Just White
+          else Nothing
+
 -- | How far along a game is, out of what the server says about it.
 countFrom :: Value -> Maybe Int
 countFrom body = length <$> (fieldOf "moves" body >>= asList)
@@ -246,6 +309,7 @@ incoming table name arguments = do
       said   <- field "body" line >>= asText
       Just (Spoke person said)
     "gamedata" -> Just (either Lost Began (openingFrom table.me body))
+    "clock" -> Ticked <$> clockFrom body
     "undo_accepted" -> do
       number <- asInt body
       Just (Undid (max 0 (table.played - number)))

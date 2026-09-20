@@ -15,6 +15,7 @@ where
 
 import           Data.Foldable                  ( traverse_ )
 import           Data.IORef
+import           Data.Maybe                     ( isJust )
 import           Data.Text                      ( Text )
 import           Hedgehog
 import qualified Pipes.Prelude                 as Pipes
@@ -316,6 +317,73 @@ prop_theTitleSaysHowTheGameEnded = withTests 1 . property $ do
   stateOf bothPass === "Game over"
   stateOf theirs === "The engine resigned"
   stateOf mine === "You resigned"
+
+-- * The clock
+---------------
+
+-- | A clock with ten minutes each and Black to play.
+onTheClock :: Clock
+onTheClock = Clock { black   = Time { seconds = 600, periods = 0, each = 0 }
+                   , white   = Time { seconds = 600, periods = 0, each = 0 }
+                   , running = Just Black
+                   }
+
+-- | Two games open in the window.
+twoGames :: State
+twoGames =
+  next (started 2 (next oneGame NewTabPressed)) (TabOpened 2 (Right silent))
+
+-- | Two games, both timed.
+bothTimed :: State
+bothTimed = foldl arrive twoGames [1, 2]
+  where arrive state tab = next state (InTab tab (Arrived (Ticked onTheClock)))
+
+prop_aSecondGoesByInEveryGameAtOnce :: Property
+prop_aSecondGoesByInEveryGameAtOnce = withTests 1 . property $ do
+  -- One stream for the window rather than one per tab, because a
+  -- second is the same second in every tab. A tab that missed it would
+  -- show a clock a second behind the one beside it.
+  let onward = next bothTimed Ticking
+      left tab = (`clockOf` Black) =<< gameIn tab onward
+  left 1 === Just Time { seconds = 599, periods = 0, each = 0 }
+  left 2 === Just Time { seconds = 599, periods = 0, each = 0 }
+
+prop_aSecondGoingByLeavesATabThatIsStillAPageAlone :: Property
+prop_aSecondGoingByLeavesATabThatIsStillAPageAlone =
+  withTests 1 . property $ do
+    -- A window can have a game in one tab and a page in another, and
+    -- the page has no clock to take anything off.
+    let mixed = next (next oneGame NewTabPressed) Ticking
+    chosenIn 2 mixed === Just asking
+    isJust (gameIn 1 mixed) === True
+
+prop_theSecondsAreOnlyCountedWhileThereIsAClockToCountThem :: Property
+prop_theSecondsAreOnlyCountedWhileThereIsAClockToCountThem =
+  withTests 1 . property $ do
+    -- A window playing GNU Go is never woken. Nothing is timed, so a
+    -- stream waking it once a second would be waking it for nothing.
+    counts oneGame === False
+    counts (next empty' NewTabPressed) === False
+    -- One that is playing on a server is woken while a clock is going
+    -- down, and stops being woken when it stops.
+    counts bothTimed === True
+    counts (paused bothTimed) === False
+ where
+  counts state = "clock" `elem` map subKey (listeners state)
+  -- Both games paused, which is what a correspondence game does for
+  -- somebody's holiday.
+  paused state = foldl stop state [1, 2]
+  stop state tab =
+    next state (InTab tab (Arrived (Ticked onTheClock { running = Nothing })))
+
+prop_theSubtitleShowsWhatEachSideHasLeft :: Property
+prop_theSubtitleShowsWhatEachSideHasLeft = withTests 1 . property $ do
+  -- Beside the captures rather than instead of them, and in the same
+  -- order every move, so the line can be read at a glance.
+  let timed = onceMore inPlay (Arrived (Ticked onTheClock))
+  capturesOf timed === "9\215\&9  \183  Black 0  10:00  \183  White 0  10:00"
+  -- And a game nobody is timing reads as it always did.
+  capturesOf inPlay === "9\215\&9  \183  Black 0  \183  White 0"
 
 prop_theSubtitleCarriesTheNumbers :: Property
 prop_theSubtitleCarriesTheNumbers = withTests 1 . property $ do

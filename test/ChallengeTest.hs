@@ -60,11 +60,12 @@ prop_aChallengeIsNeverRanked = property $ do
   let setup = wanted { size = size, human = side, handicap = stone }
   ofGame setup "ranked" === Just (Bool False)
 
-prop_theClockIsLongBecauseNothingWatchesItYet :: Property
-prop_theClockIsLongBecauseNothingWatchesItYet =
+prop_theClockIsLongBecauseNobodyWasAskedWhatItShouldBe :: Property
+prop_theClockIsLongBecauseNobodyWasAskedWhatItShouldBe =
   withTests 1 . property $ do
-    -- A game with a short clock would be lost to the clock rather than
-    -- played, which says nothing about whether any of this works.
+    -- The window shows a clock now, but nothing on the page asks what
+    -- one should be, so a game this program starts is given a time
+    -- nobody loses to by accident.
     let clock = ofGame wanted "time_control_parameters"
     (clock >>= field "main_time") === Just (Number 3600)
     (clock >>= field "period_time") === Just (Number 600)

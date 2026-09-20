@@ -119,6 +119,7 @@ test-suite stones-tests
                     , AppTest
                     , BoardTest
                     , ChallengeTest
+                    , ClockTest
                     , DrawTest
                     , FakeEngineTest
                     , FrameTest

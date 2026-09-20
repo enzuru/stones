@@ -77,9 +77,9 @@ instance FromJSON Started where
 -- Unranked, always. A rank belongs to the person who earned it, and
 -- these are games played by a program to find out whether it works.
 --
--- The clock is set long, because nothing here watches one yet. A game
--- with a short clock would be lost to the clock rather than played,
--- which says nothing about whether any of this works.
+-- The clock is set long. The window shows one now, but nothing on the
+-- page asks what it should be, so a game this program starts is given
+-- a time nobody loses to by accident.
 asking :: Setup -> Value
 asking setup = object
   [ "challenger_color" .= colorName setup.human

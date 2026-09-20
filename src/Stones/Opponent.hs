@@ -26,10 +26,15 @@ module Stones.Opponent
   , Told(..)
   , Heard(..)
   , Opening(..)
+  , Clock(..)
+  , Time(..)
+  , ticking
+  , describeTime
   )
 where
 
 import           Data.Text                      ( Text )
+import qualified Data.Text                     as Text
 import           Pipes                          ( Producer )
 
 import           Go.Types
@@ -100,6 +105,60 @@ data Opening = Opening
   }
   deriving (Eq, Show)
 
+-- | How long each player has left.
+data Clock = Clock
+  { black   :: Time
+  , white   :: Time
+  , running :: Maybe Color
+    -- ^ Whose is going down. Nobody's before the game starts and after
+    -- it ends.
+  }
+  deriving (Eq, Show)
+
+-- | One player's clock.
+--
+-- A game is usually counted in two parts: the time to think in, and
+-- then a number of shorter periods, each of which is given back if the
+-- player moves inside it. What is left of whichever is running now is
+-- the first of these, and how many are still to come is the second.
+data Time = Time
+  { seconds :: Int
+  , periods :: Int
+    -- ^ How many short periods are still to come, or none.
+  , each    :: Int
+    -- ^ How long one of those is.
+  }
+  deriving (Eq, Show)
+
+-- | A second going by.
+--
+-- The server says where a clock is when something happens, and says
+-- nothing in between, so the seconds in between are counted here. What
+-- the server says next is taken over this, because the server is the
+-- one that decides.
+ticking :: Clock -> Clock
+ticking clock = case clock.running of
+  Nothing    -> clock
+  Just Black -> clock { black = onward clock.black }
+  Just White -> clock { white = onward clock.white }
+ where
+  onward time
+    | time.seconds > 0 = time { seconds = time.seconds - 1 }
+    | time.periods > 0 = time { seconds = max 0 (time.each - 1)
+                              , periods = time.periods - 1
+                              }
+    | otherwise        = time
+
+-- | A clock as a window shows one.
+describeTime :: Time -> Text
+describeTime time = clock <> extra
+ where
+  clock =
+    Text.pack (show minutes) <> ":" <> Text.justifyRight 2 '0' (Text.pack (show rest))
+  (minutes, rest) = time.seconds `divMod` 60
+  extra | time.periods > 0 = " (\215" <> Text.pack (show time.periods) <> ")"
+        | otherwise        = ""
+
 -- | What arrives from the other side.
 data Heard
   = Began Opening
@@ -113,6 +172,9 @@ data Heard
     -- ^ Who said it, and what they said.
   | Undid Int
     -- ^ This many moves came off over there.
+  | Ticked Clock
+    -- ^ Where the clocks are. It arrives when something happens and
+    -- not in between.
   | Counted Text
     -- ^ What the game came to.
   | Lost Text
