@@ -175,7 +175,13 @@ update' state = \case
   SignedInAs (Left  why )      ->
     Transition state { signing = SignInRefused why } none
 
-  TabOpened tab (Right engine) -> inGame state tab (opened engine)
+  TabOpened tab (Right them)   -> case lookup tab state.openTabs of
+    Just (Playing _) -> inGame state tab (opened them)
+    -- The tab closed while its opponent was being found. Nobody here
+    -- is going to play this game, so it is given back rather than left
+    -- running: on a server, a game left running is somebody else
+    -- sitting at a board waiting for a player who will never arrive.
+    _                -> Transition state (perform (Nothing <$ state.opponents.close them))
   TabOpened tab (Left  why   ) -> inGame state tab (stayAt . couldNotOpen why)
 
   InTab tab event              -> inGame state tab (`step` event)
@@ -245,7 +251,13 @@ inSetup state tab event = case lookup tab state.openTabs of
         -- What was started is what the next tab asks for first.
         { opening = setup
         }
-      (perform (Just . TabOpened tab <$> state.opponents.open setup))
+      -- Under the tab's own name, so that closing the tab can stop it.
+      -- Finding an opponent on a server is waiting for somebody else
+      -- to want the same game, which can take minutes, and a tab that
+      -- closes while it waits should stop waiting.
+      (keyed (findingIn tab)
+             (perform (Just . TabOpened tab <$> state.opponents.open setup))
+      )
     _ -> Transition (replacing state tab (Choosing (chose setup event))) none
   _ -> Transition state none
 
@@ -288,7 +300,7 @@ closeTab state key = case withId state key of
   Just (tab, held) -> case remaining of
     [] -> Exit
     _  -> Transition state { openTabs = remaining, showing = showing' }
-                     (release state.opponents held)
+                     (calledOff tab held <> release state.opponents held)
    where
     remaining = [ open | open <- state.openTabs, fst open /= tab ]
     -- Showing the tab that took the closed one's place, or the last
@@ -296,6 +308,24 @@ closeTab state key = case withId state key of
     showing' = case state.showing of
       Just showed | showed /= tab -> Just showed
       _                           -> fst <$> nextAfter tab state.openTabs
+
+-- | Stop looking for an opponent for a tab that has closed.
+--
+-- A job under a name stops whatever is running under that name, so a
+-- job with nothing in it is how a search is called off.
+--
+-- Only a game that is still waiting for one has anything to call off.
+-- A tab that is still a page never started a search, and a game that
+-- has an opponent, or has given up on one, is long past it.
+calledOff :: TabId -> Stage -> Cmd Event
+calledOff tab (Playing session) = case session.standing of
+  Starting -> keyed (findingIn tab) (perform (pure Nothing))
+  _        -> none
+calledOff _ _ = none
+
+-- | The name the search for one tab's opponent runs under.
+findingIn :: TabId -> Text
+findingIn tab = "finding " <> keyOf tab
 
 -- | Stop the opponent of a tab that has closed.
 --

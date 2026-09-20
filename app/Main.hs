@@ -48,7 +48,9 @@ import           Stones.Setup                   ( Against(..)
                                                 , Setup(..)
                                                 , defaultSetup
                                                 )
+import           Stones.Opponent                ( choosing )
 import qualified Stones.Opponent.GnuGo         as GnuGo
+import qualified Stones.Online                 as Online
 
 -- | What the command line asked for.
 --
@@ -161,11 +163,12 @@ description :: ParserInfo Options
 description = info
   (helper <*> options)
   (  fullDesc
-  <> header "stones - play Go against GNU Go"
+  <> header "stones - play Go"
   <> progDesc
-       "Opens a page that asks what to play. Click a point on the \
-       \board to play there. New Game opens another page in a tab of \
-       \its own."
+       "Opens a page that asks what to play, on this computer against \
+       \GNU Go or at online-go.com against whoever is looking for the \
+       \same game. Click a point on the board to play there. New Game \
+       \opens another page in a tab of its own."
   )
 
 main :: IO ()
@@ -186,15 +189,20 @@ main = do
         >> exitFailure
     Left problem -> Text.putStrLn problem >> exitFailure
     Right () ->
-      GnuGo.withGnuGo chosen.program $ \opponents -> do
-        application <- Adw.applicationNew (Just identifier)
-                                          [Gio.ApplicationFlagsDefaultFlags]
-        _ <- Gio.onApplicationActivate application $ do
-          useOwnIcon
-          void $ startInApplication
-            application
-            (Stones.application opponents chosen.opening)
-        void (Gio.applicationRun application Nothing)
+      -- Both places a game can come from, opened for as long as the
+      -- window is. Neither starts anything until somebody asks: no
+      -- engine runs and nothing is signed in to.
+      GnuGo.withGnuGo chosen.program $ \computer ->
+        Online.withOnline Online.browsing $ \online -> do
+          let opponents = choosing computer online
+          application <- Adw.applicationNew (Just identifier)
+                                            [Gio.ApplicationFlagsDefaultFlags]
+          _ <- Gio.onApplicationActivate application $ do
+            useOwnIcon
+            void $ startInApplication
+              application
+              (Stones.application opponents chosen.opening)
+          void (Gio.applicationRun application Nothing)
 
 -- | The name the desktop knows this program by, which is the name of
 -- its icon and of the file that describes it.

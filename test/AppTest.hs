@@ -74,17 +74,14 @@ countingSource = do
 
 -- | Run what an event asked somebody to do, and answer with the events
 -- it came back with.
---
--- The jobs run under no name, here and in a game, because nothing this
--- window asks for can be stopped part way through. A window that named
--- them would want 'qualifying' as well, since a name is shared by
--- everything the loop runs and this window holds a game per tab.
 ran :: State -> Event -> PropertyT IO [Event]
 ran state event = case jobsOf (commandOf (update' state event)) of
-  []    -> annotate "nothing was asked" >> failure
-  named -> do
-    map fst named === map (const Nothing) named
-    concat <$> traverse (evalIO . Pipes.toListM . snd) named
+  []   -> annotate "nothing was asked" >> failure
+  jobs -> concat <$> traverse (evalIO . Pipes.toListM . snd) jobs
+
+-- | The names the jobs of an event run under.
+namesOf :: State -> Event -> [Maybe Text]
+namesOf state event = map fst (jobsOf (commandOf (update' state event)))
 
 -- | The command a transition answers with.
 commandOf :: Transition state event -> Cmd event
@@ -323,6 +320,53 @@ prop_theTitleSaysHowTheGameEnded = withTests 1 . property $ do
   stateOf theirs === opponentOf theirs <> " resigned"
   stateOf theirs === "nobody resigned"
   stateOf mine === "You resigned"
+
+-- * Looking for an opponent
+-----------------------------
+
+prop_theSearchForAnOpponentRunsUnderItsTabsName :: Property
+prop_theSearchForAnOpponentRunsUnderItsTabsName =
+  withTests 1 . property $ do
+    -- A name is what the loop stops a job by, and finding an opponent
+    -- on a server is waiting for somebody else to want the same game,
+    -- which can take minutes.
+    let opening = next empty' NewTabPressed
+    namesOf opening (InSetup 1 StartPressed) === [Just "finding game-1"]
+    -- One name for each tab, so stopping one leaves the other looking.
+    let two = next (started 1 opening) NewTabPressed
+    namesOf two (InSetup 2 StartPressed) === [Just "finding game-2"]
+
+prop_closingATabWhileItIsStillLookingStopsTheLooking :: Property
+prop_closingATabWhileItIsStillLookingStopsTheLooking =
+  withTests 1 . property $ do
+    -- Under the same name as the search, which is how the loop is told
+    -- to stop it. A search left running pairs somebody else into a
+    -- game with nobody at this side of it.
+    -- With a second tab open, because closing the last one ends the
+    -- window, and a window that ends lets go of everything anyway.
+    let looking = next (started 1 (next empty' NewTabPressed)) NewTabPressed
+    namesOf looking (TabClosePressed "game-1") === [Just "finding game-1"]
+    -- A game that already has one is long past that, and what its
+    -- closing asks for is letting the opponent go.
+    let playing = next oneGame NewTabPressed
+    namesOf playing (TabClosePressed "game-1") === [Nothing]
+
+prop_anOpponentFoundForATabThatWentIsGivenBack :: Property
+prop_anOpponentFoundForATabThatWentIsGivenBack = property $ do
+  (counting', counts) <- evalIO countingSource
+  let looking = started 1 (next (startingState counting' asking) NewTabPressed)
+      -- The tab closes, and the answer arrives afterwards, which is
+      -- what happens when the search was already too far along to
+      -- stop.
+      gone    = next (next looking NewTabPressed) (TabClosePressed "game-1")
+  _           <- ran gone (TabOpened 1 (Right silent))
+  (_, back) <- evalIO (readIORef counts)
+  -- Given back. Left running, it would be somebody else sitting at a
+  -- board waiting for a player who is never going to arrive.
+  back === 1
+  -- And the window is otherwise unchanged: there is no tab to put it
+  -- in and none is made.
+  map fst (next gone (TabOpened 1 (Right silent))).openTabs === [2]
 
 -- * Signing in
 ----------------

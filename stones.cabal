@@ -51,6 +51,7 @@ library
                     , Stones.Opponent
                     , Stones.Opponent.GnuGo
                     , Stones.Opponent.Ogs
+                    , Stones.Online
                     , Stones.Opponent.Gtp
                     , Stones.Files
                     , Stones.Goban
@@ -120,6 +121,7 @@ test-suite stones-tests
                     , BoardTest
                     , ChallengeTest
                     , ClockTest
+                    , OnlineTest
                     , DrawTest
                     , FakeEngineTest
                     , FrameTest
