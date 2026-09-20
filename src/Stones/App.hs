@@ -23,6 +23,8 @@ module Stones.App
   , Event(..)
   , TabId
   , Stage(..)
+  , Aside(..)
+  , asidesKept
   , startingState
   , update'
   , listeners
@@ -63,6 +65,13 @@ import           GI.Gtk.Declarative.Adwaita.References
 import           GI.Gtk.Declarative.Adwaita.Slots
                                                 ( titleWidget )
 import           GI.Gtk.Declarative.Adwaita.TabView
+import           GI.Gtk.Declarative.Adwaita.ToastOverlay
+                                                ( Toast(..)
+                                                , ToastOverlayParams(..)
+                                                , defaultToastOverlayParams
+                                                , toast
+                                                , toastOverlay
+                                                )
 import           GI.Gtk.Declarative.Adwaita.ToolbarView
                                                 ( toolbarContent
                                                 , toolbarTop
@@ -113,6 +122,9 @@ data State = State
     -- started, so a second game of the same kind is one click.
   , opponents :: Opponents
     -- ^ Where a game gets its opponent, once there is a game.
+  , asides    :: [Aside]
+    -- ^ Things said about games the player is not looking at, waiting
+    -- to be shown over whatever they are looking at.
   , showChat  :: Bool
     -- ^ Whether the pane beside the board is out. One flag for the
     -- window rather than one per tab: it is a way of using the
@@ -123,6 +135,28 @@ data State = State
     -- two places asks for. It belongs to the window rather than to a
     -- tab: signing in once is signing in for all of them.
   }
+
+-- | Something said about a game the player is not looking at.
+--
+-- A message that arrived in a tab behind this one, or in this one with
+-- the pane shut, is a message nobody sees. This is that message on its
+-- way to being shown over the board for a few seconds.
+data Aside = Aside
+  { key  :: Text
+    -- ^ What tells this one from the others. The overlay shows a name
+    -- it has not shown, and leaves one it has alone until it goes.
+  , line :: Text
+  }
+  deriving (Eq, Show)
+
+-- | How many are kept.
+--
+-- One is taken off the list when the overlay says it has gone. A
+-- handful is as many as anybody reads anyway, and keeping no more than
+-- that means a window whose overlay never says so does not grow a
+-- list forever.
+asidesKept :: Int
+asidesKept = 3
 
 -- | What the window reports.
 data Event
@@ -139,6 +173,8 @@ data Event
   | TabsReordered (Vector Text)
   | ResignChosen
     -- ^ Give up the game showing, which is what the menu means by it.
+  | AsideGone Text
+    -- ^ Something said over the board has left the screen.
   | ChatToggled Bool
     -- ^ Show or hide the pane beside the board.
   | SignedInAs (Either Text Text)
@@ -161,6 +197,7 @@ startingState opponents opening = State { openTabs  = []
                                         , nextTab   = 1
                                         , opening   = opening
                                         , opponents = opponents
+                                        , asides    = []
                                         , showChat  = False
                                         , signing   = SignedOut
                                         }
@@ -195,7 +232,13 @@ update' state = \case
     _                -> Transition state (perform (Nothing <$ state.opponents.close them))
   TabOpened tab (Left  why   ) -> inGame state tab (stayAt . couldNotOpen why)
 
-  InTab tab event              -> inGame state tab (`step` event)
+  InTab tab event              -> inGame (noticing state tab event)
+                                         tab
+                                         (`step` event)
+
+  AsideGone gone               -> Transition
+    state { asides = [ aside | aside <- state.asides, aside.key /= gone ] }
+    none
 
   TabSelected key              -> Transition state { showing = tabOf state key } none
 
@@ -218,6 +261,35 @@ update' state = \case
   ResignChosen                 -> case shownGame state of
     Just (tab, _) -> inGame state tab (`step` ResignPressed)
     Nothing       -> Transition state none
+
+-- | Something said about a game the player is not looking at goes
+-- where they will see it.
+--
+-- Not what is said about the game in front of them with the pane open.
+-- They are looking at it.
+noticing :: State -> TabId -> SessionEvent -> State
+noticing state tab = \case
+  Arrived (Spoke who what) | not (watching state tab) -> state
+    { asides = lastFew (state.asides <> [Aside (asideIn state tab) (who <> ": " <> what)])
+    }
+  _ -> state
+ where
+  lastFew asides = drop (length asides - asidesKept) asides
+
+-- | Is the player looking at what is said about this game?
+watching :: State -> TabId -> Bool
+watching state tab = state.showing == Just tab && state.showChat
+
+-- | A name for the next thing said about a game.
+--
+-- How much has been said about it already, which no two messages in
+-- one game share, and the tab, which no two games share.
+asideIn :: State -> TabId -> Text
+asideIn state tab = "said " <> keyOf tab <> " " <> Text.pack (show sofar)
+ where
+  sofar = case lookup tab state.openTabs of
+    Just (Playing session) -> length session.said
+    _                      -> 0
 
 -- | Start signing in, which opens a browser and waits.
 --
@@ -455,13 +527,29 @@ view' state =
       , #heightRequest := 360
       , on #closeRequest (True, Closed)
       ]
-    $ container
-        Adw.ToolbarView
+    $ toastOverlay
         []
-        [ toolbarTop (header state)
-        , toolbarTop (widget Adw.TabBar [tabBarView viewName])
-        , toolbarContent (gameTabs state)
-        ]
+        (defaultToastOverlayParams bars)
+          { toasts = Vector.fromList (map saidOver state.asides) }
+ where
+  bars = container
+    Adw.ToolbarView
+    []
+    [ toolbarTop (header state)
+    , toolbarTop (widget Adw.TabBar [tabBarView viewName])
+    , toolbarContent (gameTabs state)
+    ]
+
+-- | Something said about a game the player is not looking at, shown
+-- over the board for a few seconds.
+--
+-- It is taken off the window's list when it leaves the screen, so that
+-- the same words said twice are two of these rather than one the
+-- overlay has already shown and will not show again.
+saidOver :: Aside -> Toast Event
+saidOver aside = (toast aside.key aside.line)
+  { onDismissed = Just (AsideGone aside.key)
+  }
 
 -- | The bar at the top: what the player does on the left and the
 -- right, and where the game stands in the middle.

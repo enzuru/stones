@@ -380,6 +380,28 @@ prop_thePaneStaysAtTheNewestMessage = withTests 1 . property $ do
   assert (upper > showing)
   assert (value >= upper - showing - 1)
 
+prop_theWindowIsUnderAnOverlayThatCanSpeakOverIt :: Property
+prop_theWindowIsUnderAnOverlayThatCanSpeakOverIt =
+  withTests 1 . property $ do
+    -- Everything the window shows is under it, so something said about
+    -- a game behind this one has somewhere to appear.
+    overlays <- evalIO . built oneGame
+      $ \widget' -> length <$> descendantsOf Adw.ToastOverlay widget'
+    overlays === 1
+
+prop_somethingSaidOutOfViewPatchesTheWindowRatherThanRebuildingIt
+  :: Property
+prop_somethingSaidOutOfViewPatchesTheWindowRatherThanRebuildingIt =
+  withTests 1 . property $ do
+    -- The overlay is the window's outermost widget, so a message that
+    -- tore it down would take the board and the tabs with it.
+    let heard = next (next oneGame NewTabPressed)
+                     (InTab 1 (Arrived (Spoke "hikaru" "good game")))
+    said <- evalIO . runUI $ do
+      made <- create (view' oneGame)
+      pure (decision made (view' oneGame) (view' heard))
+    said === Modified
+
 prop_theMenuComesFromTheMarkup :: Property
 prop_theMenuComesFromTheMarkup = withTests 1 . property $ do
   -- The menu is a GMenuModel read from data/ui/menu.ui. A file that

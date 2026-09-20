@@ -22,6 +22,9 @@ import qualified Pipes.Prelude                 as Pipes
 import qualified Data.Vector                   as Vector
 
 import qualified Data.List                     as List
+import qualified Data.Text                     as Text
+import qualified Hedgehog.Gen                  as Gen
+import qualified Hedgehog.Range                as Range
 import           GI.Gtk.Declarative.App.Simple  ( App(..)
                                                 , Cmd
                                                 , Transition(..)
@@ -321,6 +324,74 @@ prop_theTitleSaysHowTheGameEnded = withTests 1 . property $ do
   stateOf theirs === opponentOf theirs <> " resigned"
   stateOf theirs === "nobody resigned"
   stateOf mine === "You resigned"
+
+-- * Talking
+-------------
+
+-- | A window with two games, showing the first.
+bothOpen :: State
+bothOpen = twoGames { showing = Just 1 }
+
+prop_somethingSaidInATabBehindThisOneIsShownOverIt :: Property
+prop_somethingSaidInATabBehindThisOneIsShownOverIt =
+  withTests 1 . property $ do
+    -- A message that arrives in a tab nobody is looking at is a
+    -- message nobody sees.
+    let said = next bothOpen (InTab 2 (Arrived (Spoke "hikaru" "good game")))
+    map (.line) said.asides === ["hikaru: good game"]
+    -- And it is in the game it was said about as well, so opening that
+    -- tab shows it where the rest of the talking is.
+    map (.what) (maybe [] (.said) (gameIn 2 said)) === ["good game"]
+
+prop_somethingSaidInTheTabInFrontWithThePaneShutIsShownToo :: Property
+prop_somethingSaidInTheTabInFrontWithThePaneShutIsShownToo =
+  withTests 1 . property $ do
+    -- The pane is what they would have read it in, and it is shut.
+    let shut = next bothOpen (InTab 1 (Arrived (Spoke "hikaru" "hello")))
+    map (.line) shut.asides === ["hikaru: hello"]
+    -- With the pane open they are looking at it, so nothing is put
+    -- over the board.
+    let open' = next (next bothOpen (ChatToggled True))
+                     (InTab 1 (Arrived (Spoke "hikaru" "hello")))
+    open'.asides === []
+
+prop_somethingShownOverTheBoardIsForgottenWhenItGoes :: Property
+prop_somethingShownOverTheBoardIsForgottenWhenItGoes =
+  withTests 1 . property $ do
+    let said = next bothOpen (InTab 2 (Arrived (Spoke "hikaru" "good game")))
+    case said.asides of
+      [aside] -> do
+        (next said (AsideGone aside.key)).asides === []
+        -- One that is not there is not an error, because a window can
+        -- be told twice.
+        (next said (AsideGone "no such thing")).asides === said.asides
+      _ -> annotate "it kept the wrong number" >> failure
+
+prop_theSameWordsTwiceAreTwoThingsToShow :: Property
+prop_theSameWordsTwiceAreTwoThingsToShow = withTests 1 . property $ do
+  -- The overlay shows a name it has not shown and leaves one it has
+  -- alone, so two of these under one name would be shown once.
+  let twice = foldl (\state _ -> next state (InTab 2 (Arrived (Spoke "hikaru" "hello"))))
+                    bothOpen
+                    [1 .. 2 :: Int]
+  length twice.asides === 2
+  length (List.nub (map (.key) twice.asides)) === 2
+
+prop_noMoreAreKeptThanAnybodyReads :: Property
+prop_noMoreAreKeptThanAnybodyReads = property $ do
+  many <- forAll (Gen.int (Range.linear 0 20))
+  let said = foldl
+        (\state n ->
+          next state (InTab 2 (Arrived (Spoke "hikaru" (Text.pack (show n)))))
+        )
+        bothOpen
+        [1 .. many]
+  -- The list only shrinks when the overlay says one has gone, so it is
+  -- capped rather than trusted.
+  assert (length said.asides <= asidesKept)
+  -- And what is kept is the newest, because that is what is worth
+  -- reading.
+  assert (length said.asides == min many asidesKept)
 
 -- * Looking for an opponent
 -----------------------------
