@@ -315,8 +315,58 @@ prop_theTitleSaysHowTheGameEnded = withTests 1 . property $ do
       theirs   = onceMore played (Arrived (Played White Resign))
       mine     = onceMore inPlay ResignPressed
   stateOf bothPass === "Game over"
-  stateOf theirs === "The engine resigned"
+  -- Whoever gave up is named, because the other side is a program in
+  -- one game and a person in the next, and "the engine" is wrong in
+  -- the second.
+  stateOf theirs === opponentOf theirs <> " resigned"
+  stateOf theirs === "nobody resigned"
   stateOf mine === "You resigned"
+
+-- * The counting at the end
+-----------------------------
+
+-- | The game showing, played out until both sides passed and stopped
+-- by the other side to be counted.
+beingCounted :: Session
+beingCounted = foldl onceMore
+                     inPlay
+                     [ Clicked (Coord 0 0)
+                     , Arrived (Played White (Play (Coord 8 8)))
+                     , Arrived (Played White Pass)
+                     , Passed
+                     , Arrived Stopped
+                     , Arrived (Removing [Coord 8 8])
+                     ]
+
+prop_theTitleSaysToCountTheGame :: Property
+prop_theTitleSaysToCountTheGame = withTests 1 . property $ do
+  -- Before the game is called over, because a game being counted has
+  -- finished as far as the rules here go: both players passed, and
+  -- what is left is not a move.
+  stateOf beingCounted === "Count the game"
+  -- Nothing about counting is written on the board, so what to do with
+  -- it has to be written under the title.
+  aboutGame beingCounted === "Click a group to mark it dead, then accept"
+
+prop_theSameButtonPassesAndThenAccepts :: Property
+prop_theSameButtonPassesAndThenAccepts = withTests 1 . property $ do
+  -- They are the same thing at two moments: the one that hands the
+  -- game on. Two buttons, with whichever does not apply greyed, would
+  -- leave a player looking for the difference between them.
+  playable inPlay === True
+  canAccept inPlay === False
+  playable beingCounted === False
+  canAccept beingCounted === True
+
+prop_theBoardIsToldWhichClickItIsTaking :: Property
+prop_theBoardIsToldWhichClickItIsTaking = withTests 1 . property $ do
+  -- While the game is played a click is about a point, and while it is
+  -- counted a click is about a group, so the board cannot work out
+  -- which from the position alone.
+  settling inPlay === False
+  deadIn inPlay === []
+  settling beingCounted === True
+  deadIn beingCounted === [Coord 8 8]
 
 -- * The clock
 ---------------

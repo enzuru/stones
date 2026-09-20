@@ -33,7 +33,9 @@ import           GI.Gtk.Declarative.App.Simple  ( Cmd
 import           Hedgehog
 import qualified Pipes.Prelude                 as Pipes
 
-import           Go.Board                       ( stoneAt )
+import           Go.Board                       ( stoneAt
+                                                , stoneCount
+                                                )
 import           Go.Game
 import           Go.Types
 import           Stones.Opponent
@@ -277,6 +279,138 @@ prop_movesComingOffOverThereComeOffHere = withTests 1 . property $ do
   -- Nothing to take back is nothing done.
   (after game (Arrived (Undid 5))).game.moves === []
   (after game (Arrived (Undid 0))).game.moves === []
+
+-- * The counting at the end
+-----------------------------
+
+-- | A game played out until both sides passed, and then stopped by
+-- the other side to be counted.
+--
+-- Black ends up with two stones side by side in one corner and White
+-- with one in the other, so that a click on either is a click on a
+-- group and there is something to mark.
+stoppedFrom :: Session -> Session
+stoppedFrom start = foldl after
+                          start
+                          [ Clicked (Coord 0 0)
+                          , Arrived (Played White (Play (Coord 8 8)))
+                          , Clicked (Coord 0 1)
+                          , Arrived (Played White Pass)
+                          , Passed
+                          , Arrived Stopped
+                          ]
+
+-- | The same, against the opponent that says nothing.
+stopped :: Session
+stopped = stoppedFrom game
+
+prop_aGameStillBeingPlayedIsNotBeingCounted :: Property
+prop_aGameStillBeingPlayedIsNotBeingCounted = withTests 1 . property $ do
+  settling game === False
+  deadIn game === []
+  canAccept game === False
+  -- Against GNU Go it never is: that counts the game itself, and a
+  -- score arrives without anybody agreeing to anything.
+  settling (after game (Arrived (Counted "B+2.5"))) === False
+
+prop_bothSidesPassingStopsTheGameAndStartsTheCounting :: Property
+prop_bothSidesPassingStopsTheGameAndStartsTheCounting =
+  withTests 1 . property $ do
+    settling stopped === True
+    canAccept stopped === True
+    -- Nothing is marked yet. The marks come separately, and may not
+    -- come at all if neither player thinks anything is dead.
+    deadIn stopped === []
+    -- The board is not taking moves any more, so nothing that would
+    -- have been a move is one.
+    playable stopped === False
+
+prop_theStonesMarkedDeadAreTheOnesTheOtherSideSays :: Property
+prop_theStonesMarkedDeadAreTheOnesTheOtherSideSays =
+  withTests 1 . property $ do
+    let marked = after stopped (Arrived (Removing [Coord 8 8]))
+    deadIn marked === [Coord 8 8]
+    -- And a group brought back to life.
+    deadIn (after marked (Arrived (Removing []))) === []
+
+prop_theMarksSurviveTheGameStoppingTwice :: Property
+prop_theMarksSurviveTheGameStoppingTwice = withTests 1 . property $ do
+  -- Which part of the game it is and what is marked in it arrive
+  -- separately, in whichever order they arrive in. Reading the second
+  -- as the first would wipe the marks.
+  let marked = after stopped (Arrived (Removing [Coord 8 8]))
+  deadIn (after marked (Arrived Stopped)) === [Coord 8 8]
+
+prop_aClickWhileCountingMarksTheWholeGroup :: Property
+prop_aClickWhileCountingMarksTheWholeGroup = withTests 1 . property $ do
+  -- A group lives or dies together, so the click takes all of it.
+  said <- saying (\them -> Transition (stoppedFrom (gameWith them)) none)
+                 [Clicked (Coord 0 0)]
+  said === [Marking [Coord 0 0, Coord 0 1] True]
+
+prop_clickingAMarkedGroupBringsItBack :: Property
+prop_clickingAMarkedGroupBringsItBack = withTests 1 . property $ do
+  said <- saying
+    (\them -> Transition
+      (after (stoppedFrom (gameWith them))
+             (Arrived (Removing [Coord 0 0, Coord 0 1]))
+      )
+      none
+    )
+    [Clicked (Coord 0 1)]
+  said === [Marking [Coord 0 0, Coord 0 1] False]
+
+prop_aClickOnAnEmptyPointWhileCountingIsAboutNothing :: Property
+prop_aClickOnAnEmptyPointWhileCountingIsAboutNothing =
+  withTests 1 . property $ do
+    -- There is no group on an empty point, so there is nothing a click
+    -- there could mean. It is not a move either: the game has stopped.
+    said <- saying (\them -> Transition (stoppedFrom (gameWith them)) none)
+                   [Clicked (Coord 4 4)]
+    said === []
+    after stopped (Clicked (Coord 4 4)) `sameBoardAs` stopped
+
+prop_nothingIsMarkedHereUntilTheOtherSideSaysSo :: Property
+prop_nothingIsMarkedHereUntilTheOtherSideSaysSo =
+  withTests 1 . property $ do
+    -- A move goes down before it is said, because somebody is waiting
+    -- to play the next one. Nobody is waiting on a mark, so this one
+    -- waits for the answer and the two sides cannot drift apart.
+    deadIn (after stopped (Clicked (Coord 0 0))) === []
+
+prop_acceptingSaysTheWholeSetAsItStands :: Property
+prop_acceptingSaysTheWholeSetAsItStands = withTests 1 . property $ do
+  said <- saying
+    (\them -> Transition
+      (after (stoppedFrom (gameWith them)) (Arrived (Removing [Coord 8 8])))
+      none
+    )
+    [AcceptPressed]
+  said === [Accepting [Coord 8 8]]
+
+prop_thereIsNothingToAcceptInAGameStillBeingPlayed :: Property
+prop_thereIsNothingToAcceptInAGameStillBeingPlayed =
+  withTests 1 . property $ do
+    canAccept game === False
+    asked game AcceptPressed === False
+
+prop_theCountArrivingEndsTheCounting :: Property
+prop_theCountArrivingEndsTheCounting = withTests 1 . property $ do
+  -- Both sides agreed, the server counted it, and there is nothing
+  -- left to agree about.
+  let marked = after stopped (Arrived (Removing [Coord 8 8]))
+      over   = after marked (Arrived (Counted "B+12.5"))
+  settling over === False
+  deadIn over === []
+  canAccept over === False
+  over.note === Just (Result "B+12.5")
+
+-- | Two games standing at the same position.
+sameBoardAs :: Session -> Session -> PropertyT IO ()
+sameBoardAs one other = do
+  map (`stoneCount` one.game.board) [Black, White]
+    === map (`stoneCount` other.game.board) [Black, White]
+  one.game.turn === other.game.turn
 
 -- * The clock
 ---------------

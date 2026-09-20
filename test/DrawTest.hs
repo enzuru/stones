@@ -46,6 +46,8 @@ shown = GobanProps { board = boardOf 9 [(Black, (2, 2)), (White, (4, 4))]
                    , last        = Nothing
                    , hover       = Just Black
                    , coordinates = True
+                   , dead        = []
+                   , marking     = False
                    }
 
 -- | Draw a board onto a surface this size, and answer with its pixels.
@@ -177,6 +179,39 @@ prop_aClickWhenItIsNotYourTurnDoesNothing = withTests 1 . property $ do
   let waiting  = shown { hover = Nothing }
       (px, py) = middleOf shown 400 400 (Coord 6 6)
   clickAt waiting 400 400 px py === Nothing
+
+-- | The same board, at the end of the game, when a click is about a
+-- group rather than about a point.
+counting :: GobanProps
+counting = shown { hover = Nothing, marking = True, dead = [Coord 4 4] }
+
+prop_whileCountingAClickLandsOnAStoneAndNotOnAnEmptyPoint :: Property
+prop_whileCountingAClickLandsOnAStoneAndNotOnAnEmptyPoint =
+  withTests 1 . property $ do
+    -- Exactly the other way round from a game being played, which is
+    -- why the board has to be told which one it is showing.
+    let onAStone = middleOf counting 400 400 (Coord 2 2)
+        onNobody = middleOf counting 400 400 (Coord 6 6)
+    uncurry (clickAt counting 400 400) onAStone === Just (GobanClicked (Coord 2 2))
+    uncurry (clickAt counting 400 400) onNobody === Nothing
+    -- A stone already marked takes a click too, because that is how a
+    -- group comes back to life.
+    uncurry (clickAt counting 400 400) (middleOf counting 400 400 (Coord 4 4))
+      === Just (GobanClicked (Coord 4 4))
+
+prop_aDeadStoneIsDrawnButNotAsALiveOne :: Property
+prop_aDeadStoneIsDrawnButNotAsALiveOne = withTests 1 . property $ do
+  -- It is still on the board: nothing has been taken off, and the two
+  -- players are agreeing about what would have happened rather than
+  -- making it happen. It has to look different, though, or there is no
+  -- way to see what anybody agreed to.
+  live   <- evalIO (drawn shown)
+  marked <- evalIO (drawn shown { dead = [Coord 4 4] })
+  assert (live /= marked)
+  -- Marking a point with no stone on it changes nothing, because there
+  -- is nothing there to mark.
+  empty' <- evalIO (drawn shown { dead = [Coord 6 6] })
+  live === empty'
 
 prop_aClickOffTheBoardDoesNothing :: Property
 prop_aClickOffTheBoardDoesNothing = withTests 1 . property $ do

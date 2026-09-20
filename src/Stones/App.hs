@@ -418,13 +418,29 @@ header state = container
   -- Packed from the right edge inward, so the menu is the button in
   -- the corner, which is where a GNOME program keeps it.
   , headerBarEnd (mainMenu state)
-  , headerBarEnd
-    (action state
-            "media-skip-forward-symbolic"
-            "Pass, giving the move to the other player"
-            playable
-            Passed)
+  , headerBarEnd (finishing state)
   ]
+
+-- | The button at the right-hand end.
+--
+-- Pass while the game is being played, and Accept once it has
+-- stopped. They are the same button because they are the same thing
+-- at two moments: the one that hands the game on. Two buttons, with
+-- whichever does not apply greyed, would leave a player looking for
+-- the difference between them.
+finishing :: State -> Widget Event
+finishing state
+  | maybe False (settling . snd) (shownGame state) = action
+    state
+    "object-select-symbolic"
+    "Accept the stones marked dead and count the game"
+    canAccept
+    AcceptPressed
+  | otherwise = action state
+                       "media-skip-forward-symbolic"
+                       "Pass, giving the move to the other player"
+                       playable
+                       Passed
 
 -- | A button in the header bar that does something to the game
 -- showing.
@@ -476,7 +492,11 @@ stateOf :: Session -> Text
 stateOf session = case session.standing of
   Starting -> "Starting\8230"
   Gone _   -> "Stopped"
-  _ | finished game    -> ending session
+  -- Before the line below, because a game being counted has finished
+  -- as far as the rules here go: both players passed, and what is left
+  -- is not a move.
+  _ | settling session -> "Count the game"
+    | finished game    -> ending session
     | playable session -> "Your move"
     | otherwise        -> "Thinking\8230"
   where game = session.game
@@ -484,9 +504,9 @@ stateOf session = case session.standing of
 -- | How a game that is over ended.
 ending :: Session -> Text
 ending session = case winnerByResignation session.game of
-  Just winner | winner == session.human -> "The engine resigned"
-              | otherwise                      -> "You resigned"
-  Nothing                                      -> "Game over"
+  Just winner | winner == session.human -> opponentOf session <> " resigned"
+              | otherwise               -> "You resigned"
+  Nothing                               -> "Game over"
 
 -- | The line under the title, while a game is going on.
 --
@@ -497,6 +517,10 @@ ending session = case winnerByResignation session.game of
 aboutGame :: Session -> Text
 aboutGame session = case session.standing of
   Gone why -> why
+  -- While the game is being counted the numbers are not the thing to
+  -- say. Nothing about counting is written on the board, so what the
+  -- player is meant to do with it has to be.
+  _ | settling session -> "Click a group to mark it dead, then accept"
   _        -> case session.note of
     Just (Result  out ) -> "Result: " <> out
     Just (Refused what) -> describeIllegal what
@@ -563,6 +587,8 @@ board tab session = toEvent <$> goban
     , last        = game.last
     , hover       = session.human <$ ready session
     , coordinates = True
+    , dead        = deadIn session
+    , marking     = settling session
     }
   toEvent (GobanClicked coord) = InTab tab (Clicked coord)
 

@@ -83,6 +83,14 @@ data Told
   | Counting
     -- ^ Nobody is to move, because the game has ended. What is the
     -- score?
+  | Marking [Coord] Bool
+    -- ^ These stones are dead, or are alive after all. At the end of a
+    -- game the two players agree which stones would have been taken if
+    -- play had gone on, because nobody plays those moves out.
+  | Accepting [Coord]
+    -- ^ This is the set of dead stones, as far as this player is
+    -- concerned. The game is counted once both sides have said so
+    -- about the same set.
   | Said Text
     -- ^ Something to say to whoever is listening.
   deriving (Eq, Show)
@@ -137,17 +145,18 @@ data Time = Time
 -- the server says next is taken over this, because the server is the
 -- one that decides.
 ticking :: Clock -> Clock
-ticking clock = case clock.running of
-  Nothing    -> clock
-  Just Black -> clock { black = onward clock.black }
-  Just White -> clock { white = onward clock.white }
+ticking clock = Clock { black   = down Black clock.black
+                      , white   = down White clock.white
+                      , running = clock.running
+                      }
  where
-  onward time
-    | time.seconds > 0 = time { seconds = time.seconds - 1 }
-    | time.periods > 0 = time { seconds = max 0 (time.each - 1)
-                              , periods = time.periods - 1
-                              }
-    | otherwise        = time
+  down side time
+    | clock.running /= Just side = time
+    | time.seconds > 0           = time { seconds = time.seconds - 1 }
+    | time.periods > 0           = time { seconds = max 0 (time.each - 1)
+                                        , periods = time.periods - 1
+                                        }
+    | otherwise                  = time
 
 -- | A clock as a window shows one.
 describeTime :: Time -> Text
@@ -172,6 +181,13 @@ data Heard
     -- ^ Who said it, and what they said.
   | Undid Int
     -- ^ This many moves came off over there.
+  | Stopped
+    -- ^ Nobody moves again. What is left is agreeing which stones are
+    -- dead, and the game is counted from there.
+  | Removing [Coord]
+    -- ^ The stones marked dead, as they now stand. The whole set every
+    -- time, rather than what changed, so a window that missed one is
+    -- not left showing a board nobody else can see.
   | Ticked Clock
     -- ^ Where the clocks are. It arrives when something happens and
     -- not in between.

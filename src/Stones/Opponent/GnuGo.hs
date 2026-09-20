@@ -159,11 +159,16 @@ telling gtp current output human = \case
   Asked      -> genMove gtp current them
     >>= put output . either Lost (Played them)
   Counting   -> score gtp >>= put output . either Lost Counted
-  -- The protocol has no word for either of these. A resignation ends
-  -- the game here and there is nothing left to ask GNU Go for, and
-  -- GNU Go has nothing to say and nobody to say it to.
+  -- The protocol has no word for any of these. A resignation ends the
+  -- game here and there is nothing left to ask GNU Go for, and GNU Go
+  -- has nothing to say and nobody to say it to.
   Resigned   -> pure (Right ())
   Said _     -> pure (Right ())
+  -- Nobody has to agree with GNU Go about which stones are dead. It
+  -- counts the game itself, which is what @final_score@ is, so a game
+  -- against it never stops to be counted by hand.
+  Marking _ _ -> pure (Right ())
+  Accepting _ -> pure (Right ())
   where them = opposite human
 
 -- | Put something on the stream. A stream nobody is reading from any

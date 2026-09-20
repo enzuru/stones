@@ -211,6 +211,41 @@ prop_startingAGameTurnsThePageIntoABoard = withTests 1 . property $ do
   said === Modified
   areas === 1
 
+-- | The window with its game played out to the end and stopped, which
+-- is when the board marks groups instead of taking moves.
+beingCounted :: State
+beingCounted = foldl (\state event -> next state (InTab 1 event))
+                 oneGame
+                 [ Clicked (Coord 0 0)
+                 , Arrived (Played White (Play (Coord 8 8)))
+                 , Arrived (Played White Pass)
+                 , Passed
+                 , Arrived Stopped
+                 , Arrived (Removing [Coord 8 8])
+                 ]
+
+prop_aGameBeingCountedStillBuildsAWindow :: Property
+prop_aGameBeingCountedStillBuildsAWindow = withTests 1 . property $ do
+  -- The button at the right-hand end is a different button now, and a
+  -- property or an icon GTK does not know only shows up here.
+  (titles, areas, buttons) <- evalIO . built beingCounted $ \widget' -> do
+    titles  <- titlesUnder widget'
+    areas   <- descendantsOf Gtk.DrawingArea widget'
+    buttons <- descendantsOf Gtk.Button widget'
+    pure (titles, length areas, length buttons)
+  titles === [("Count the game", "Click a group to mark it dead, then accept")]
+  areas === 1
+  assert (buttons >= 2)
+
+prop_theGameStoppingPatchesTheWindow :: Property
+prop_theGameStoppingPatchesTheWindow = withTests 1 . property $ do
+  -- Pass and Accept are the same button in the same place, so the bar
+  -- is patched rather than torn down and built again.
+  said <- evalIO . runUI $ do
+    made <- create (view' oneGame)
+    pure (decision made (view' oneGame) (view' beingCounted))
+  said === Modified
+
 prop_theMenuComesFromTheMarkup :: Property
 prop_theMenuComesFromTheMarkup = withTests 1 . property $ do
   -- The menu is a GMenuModel read from data/ui/menu.ui. A file that

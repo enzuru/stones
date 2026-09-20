@@ -213,6 +213,106 @@ prop_whatThisProgramDoesNotActOnIsNothingToSay = withTests 1 . property $ do
   incoming table "game/1234/removed_stones" [object []] === Nothing
   incoming table "game/1234/move" [] === Nothing
 
+-- * The counting at the end
+-----------------------------
+
+prop_markingAGroupSaysWhichStonesAndWhetherTheyAreDead :: Property
+prop_markingAGroupSaysWhichStonesAndWhetherTheyAreDead =
+  withTests 1 . property $ do
+    outgoing table (Marking [Coord 0 0, Coord 1 1] True)
+      === [ ( "game/removed_stones/set"
+            , object
+              [ "game_id" .= (1234 :: Int)
+              , "stones" .= ("aabb" :: Text)
+              , "removed" .= True
+              ]
+            )
+          ]
+    -- And the same click again, bringing the group back to life.
+    outgoing table (Marking [Coord 0 0] False)
+      === [ ( "game/removed_stones/set"
+            , object
+              [ "game_id" .= (1234 :: Int)
+              , "stones" .= ("aa" :: Text)
+              , "removed" .= False
+              ]
+            )
+          ]
+
+prop_acceptingSaysTheWholeSetAndNotWhatChanged :: Property
+prop_acceptingSaysTheWholeSetAndNotWhatChanged = withTests 1 . property $ do
+  -- The game is counted once both sides have accepted the same set,
+  -- so what is accepted is the set rather than a yes.
+  outgoing table (Accepting [Coord 2 2, Coord 3 4])
+    === [ ( "game/removed_stones/accept"
+          , object
+            [ "game_id" .= (1234 :: Int)
+            , "stones" .= ("ccde" :: Text)
+            , "strict_seki_mode" .= False
+            ]
+          )
+        ]
+
+prop_everySetOfStonesHasAWritingOfItsOwn :: Property
+prop_everySetOfStonesHasAWritingOfItsOwn = property $ do
+  stones <- forAll (Gen.list (Range.linear 0 20) (point 19))
+  -- What is written is what comes back, which is what lets a set
+  -- marked here be the set agreed to over there.
+  decodeStones (encodeStones stones) === stones
+
+prop_theGameStoppingIsNewsEvenBeforeAnythingIsMarked :: Property
+prop_theGameStoppingIsNewsEvenBeforeAnythingIsMarked =
+  withTests 1 . property $ do
+    -- Both players passed, so nobody moves again. The marks come
+    -- separately and may come first, so this says which part of the
+    -- game it is and nothing about what is in it.
+    incoming table "game/1234/phase" [String "stone removal"] === Just Stopped
+    incoming table "game/1234/phase" [String "play"] === Nothing
+    incoming table "game/1234/phase" [String "finished"] === Nothing
+
+prop_theStonesMarkedDeadArriveAsTheWholeSet :: Property
+prop_theStonesMarkedDeadArriveAsTheWholeSet = withTests 1 . property $ do
+  let marked = object
+        [ "removed" .= True
+        , "stones" .= ("aa" :: Text)
+        , "all_removed" .= ("aabbcc" :: Text)
+        ]
+  incoming table "game/1234/removed_stones" [marked]
+    === Just (Removing [Coord 0 0, Coord 1 1, Coord 2 2])
+  -- And a set emptied again, which is a group brought back to life.
+  let none' = object ["removed" .= False, "all_removed" .= ("" :: Text)]
+  incoming table "game/1234/removed_stones" [none'] === Just (Removing [])
+
+prop_aChangeWithNoWholeSetBesideItIsNothingToActOn :: Property
+prop_aChangeWithNoWholeSetBesideItIsNothingToActOn =
+  withTests 1 . property $ do
+    -- A set worked out from a change is a set that can be wrong, and a
+    -- wrong one would have this player agreeing to a count they cannot
+    -- see. Showing none is the safe way to be wrong.
+    let change = object ["removed" .= True, "stones" .= ("aa" :: Text)]
+    incoming table "game/1234/removed_stones" [change] === Nothing
+
+prop_aFinishedGameComesBackAsWhatItCameToAndNotAsANewOne :: Property
+prop_aFinishedGameComesBackAsWhatItCameToAndNotAsANewOne =
+  withTests 1 . property $ do
+    -- The server sends the whole of a game again when it ends. Reading
+    -- that as a game starting would put the board back up and throw
+    -- the result away.
+    let over = object
+          [ "phase" .= ("finished" :: Text)
+          , "outcome" .= ("12.5 points" :: Text)
+          , "winner" .= (77 :: Int)
+          , "black_player_id" .= (77 :: Int)
+          , "white_player_id" .= (99 :: Int)
+          ]
+    incoming table "game/1234/gamedata" [over] === Just (Counted "B+12.5 points")
+    -- The same game won by the other side.
+    let theirs = replacing "winner" (toJSON (99 :: Int)) over
+    incoming table "game/1234/gamedata" [theirs]
+      === Just (Counted "W+12.5 points")
+    -- A game still being played is still a game starting.
+    resultFrom (object ["phase" .= ("play" :: Text)]) === Nothing
+
 -- * The clock
 ---------------
 

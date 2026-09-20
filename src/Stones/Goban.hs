@@ -34,6 +34,7 @@ module Stones.Goban
   , clickAt
   , pointerAt
   , wouldTakeAStone
+  , takesClickAt
   , clicked
   , pointerMoved
   , pointerLeft
@@ -47,6 +48,7 @@ import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import           Data.Vector                    ( Vector )
 
+import qualified Data.Set                      as Set
 import qualified GI.Cairo.Render               as Cairo
 import           GI.Cairo.Render.Connector      ( renderWithContext )
 import qualified GI.Adw                        as Adw
@@ -70,6 +72,15 @@ data GobanProps = GobanProps
     -- not this player's turn and the board takes no clicks.
   , coordinates :: !Bool
     -- ^ Whether to write the column letters and row numbers.
+  , dead       :: ![Coord]
+    -- ^ The stones marked dead while the game is being counted. They
+    -- are still on the board and are drawn faintly, with a mark on
+    -- them, because a player has to see both what is there and what
+    -- everybody has agreed is not.
+  , marking    :: !Bool
+    -- ^ Whether a click is about the group under it rather than about
+    -- the point. This is what the end of a game is: the board takes no
+    -- more moves, and a click marks a group dead or brings it back.
   }
   deriving (Eq, Show)
 
@@ -191,7 +202,19 @@ clickAt
   :: GobanProps -> Double -> Double -> Double -> Double -> Maybe GobanEvent
 clickAt props width height x y = do
   coord <- pointAt (layout props width height) x y
-  if wouldTakeAStone props coord then Just (GobanClicked coord) else Nothing
+  if takesClickAt props coord then Just (GobanClicked coord) else Nothing
+
+-- | Is there anything a click on this point would do?
+--
+-- While the game is being played, a click puts a stone down, so it
+-- lands on an empty point and nowhere else. While the game is being
+-- counted, it is about a group, so it lands on a stone and nowhere
+-- else. The two are exactly the other way round, which is why the
+-- board has to be told which one it is showing.
+takesClickAt :: GobanProps -> Coord -> Bool
+takesClickAt props coord
+  | props.marking = stoneAt props.board coord /= Nothing
+  | otherwise     = wouldTakeAStone props coord
 
 -- | The point the pointer is over, which is where the faint stone
 -- goes. Every point counts, whether or not a stone could go on it:
@@ -287,22 +310,52 @@ palette dark
 -- | Draw the whole board into a space this wide and this tall.
 draw
   :: GobanProps -> Bool -> Maybe Coord -> Double -> Double -> Cairo.Render ()
-draw props@GobanProps { board, last = played, coordinates } dark hovered width height
+draw props@GobanProps { board, last = played, coordinates, dead } dark hovered width height
   = do
-    let n   = board.size
-        geo = geometry n width height
-        ink = palette dark
+    let n       = board.size
+        geo     = geometry n width height
+        ink     = palette dark
+        marked  = Set.fromList dead
+        standing =
+          [ (point, stone)
+          | point      <- coords board
+          , Just stone <- [stoneAt board point]
+          ]
     drawWood ink geo
     drawGrid ink geo
     drawStars ink geo
     when coordinates (drawLabels ink geo)
     mapM_ (drawStoneAt geo)
-          [ (point, stone)
-          | point        <- coords board
-          , Just stone   <- [stoneAt board point]
-          ]
+          [ stone | stone <- standing, not (Set.member (fst stone) marked) ]
+    mapM_ (drawDeadAt geo)
+          [ stone | stone <- standing, Set.member (fst stone) marked ]
     mapM_ (drawLastMark geo board) played
     drawHover props geo hovered
+
+-- | A stone both players have agreed is dead.
+--
+-- Faint, so that the position everybody is counting shows through it,
+-- and crossed, because faint on its own could be a trick of the
+-- screen. It is still on the board: nothing has been taken off, and
+-- the two players are agreeing about what would have happened rather
+-- than making it happen.
+drawDeadAt :: Geometry -> (Coord, Color) -> Cairo.Render ()
+drawDeadAt geo (coord, color) = do
+  Cairo.pushGroup
+  drawStoneAt geo (coord, color)
+  Cairo.popGroupToSource
+  Cairo.paintWithAlpha 0.3
+  let (x, y) = centreOf geo coord
+      arm    = geo.stone * 0.42
+  case color of
+    Black -> Cairo.setSourceRGBA 1 1 1 0.75
+    White -> Cairo.setSourceRGBA 0 0 0 0.6
+  Cairo.setLineWidth (max 1 (geo.stone * 0.14))
+  Cairo.moveTo (x - arm) (y - arm)
+  Cairo.lineTo (x + arm) (y + arm)
+  Cairo.moveTo (x + arm) (y - arm)
+  Cairo.lineTo (x - arm) (y + arm)
+  Cairo.stroke
 
 -- | The wooden square, with a rounded edge and a line around it.
 drawWood :: Palette -> Geometry -> Cairo.Render ()

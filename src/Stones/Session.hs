@@ -28,6 +28,9 @@ module Stones.Session
   , ready
   , playable
   , canUndo
+  , settling
+  , deadIn
+  , canAccept
   , tick
   , counting
   , clockOf
@@ -38,11 +41,15 @@ module Stones.Session
 where
 
 import           Data.Maybe                     ( isJust )
+import qualified Data.Set                      as Set
 import           Data.Text                      ( Text )
 
 import           GI.Gtk.Declarative.App.Simple  ( Transition(..)
                                                 , none
                                                 , perform
+                                                )
+import           Go.Board                       ( group
+                                                , stoneAt
                                                 )
 import           Go.Game
 import           Go.Types
@@ -84,6 +91,10 @@ data Session = Session
   , clock    :: Maybe Clock
     -- ^ How long each player has left, in a game that is counted.
     -- A game nobody is timing has none, and shows none.
+  , dead     :: Maybe [Coord]
+    -- ^ In a game that has stopped and is being counted, the stones
+    -- both sides are being asked to agree are dead. A game still being
+    -- played has none, and that is what tells the two apart.
   }
 
 -- | What the window has to say about a game beyond whose turn it is.
@@ -107,6 +118,9 @@ data SessionEvent
   | UndoPressed
   | Says Text
     -- ^ The player wrote something to say.
+  | AcceptPressed
+    -- ^ The player agrees that the stones marked dead are the dead
+    -- ones, and the game can be counted from there.
   | Arrived Heard
     -- ^ Something came from the other side.
   deriving (Show)
@@ -127,6 +141,7 @@ starting human n = Session { game     = newGame n
                            , note     = Nothing
                            , said     = []
                            , clock    = Nothing
+                           , dead     = Nothing
                            }
 
 -- | The opponent this game was waiting for is here.
@@ -227,11 +242,17 @@ canUndo session = case session.standing of
 -- | What one event does to a game.
 step :: Session -> SessionEvent -> Step
 step session = \case
-  Clicked coord -> humanMove session (Play coord)
+  -- What a click means depends on whether the game is still being
+  -- played. Once it has stopped, the board is not taking moves and a
+  -- click is about a group rather than about a point.
+  Clicked coord -> case session.dead of
+    Just marks -> marking session marks coord
+    Nothing    -> humanMove session (Play coord)
   Passed        -> humanMove session Pass
   ResignPressed -> resign session
   UndoPressed   -> takeBack session
   Says text     -> says session text
+  AcceptPressed -> accepting session
   Arrived heard -> arrived session heard
 
 -- | The game stands here, and nothing is said to anybody.
@@ -279,6 +300,57 @@ humanMove session move = case ready session of
       | finished game -> telling session { game = game } them [Moved move, Counting]
       | otherwise     -> telling session { game = game } them [Moved move, Asked]
 
+-- * Counting
+--------------
+
+-- | Is this game stopped and being counted?
+settling :: Session -> Bool
+settling session = isJust session.dead
+
+-- | The stones marked dead, which is none at all in a game that is
+-- still being played.
+deadIn :: Session -> [Coord]
+deadIn session = maybe [] id session.dead
+
+-- | Is there a count to agree to, and somebody to agree to it with?
+canAccept :: Session -> Bool
+canAccept session = settling session && isJust (listening session)
+
+-- | A click while the game is being counted, which is about the group
+-- under it rather than about the point.
+--
+-- The whole group goes at once, because a group lives or dies
+-- together: marking one stone of it and leaving the rest is not a
+-- thing either player could mean.
+--
+-- What is marked here is not written down here. The other side says
+-- what the marks are and both players see the same ones, the same way
+-- both see the same moves. A move goes down before it is said because
+-- somebody is waiting to play the next one; nobody is waiting on a
+-- mark, so this one waits for the answer and cannot drift.
+marking :: Session -> [Coord] -> Coord -> Step
+marking session marks coord = case listening session of
+  Nothing -> stay session
+  Just them -> case stoneAt board coord of
+    -- An empty point has no group on it, so there is nothing a click
+    -- there could be about.
+    Nothing -> stay session
+    Just _  -> telling session them [Marking chain (not wasDead)]
+ where
+  board   = session.game.board
+  chain   = Set.toList (group board coord)
+  wasDead = coord `elem` marks
+
+-- | The player agrees to the count as it stands.
+--
+-- The game is counted once both sides have agreed to the same set, and
+-- the server is what decides that. Nothing changes here until it says
+-- so.
+accepting :: Session -> Step
+accepting session = case (session.dead, listening session) of
+  (Just marks, Just them) -> telling session them [Accepting marks]
+  _                       -> stay session
+
 -- | Giving the game up, which ends it where it stands.
 resign :: Session -> Step
 resign session = case ready session of
@@ -324,7 +396,14 @@ arrived session = \case
     stay session { said = session.said <> [Chat person text] }
   Undid count       -> tookBack session count
   Ticked clock      -> stay session { clock = Just clock }
-  Counted out       -> stay session { note = Just (Result out) }
+  -- The game has stopped. Whatever is already marked stays marked:
+  -- this says which part of the game it is and not what is in it, and
+  -- the two arrive in whichever order they arrive in.
+  Stopped           -> stay session { dead = Just (deadIn session) }
+  Removing marks    -> stay session { dead = Just marks }
+  -- The counting is over, so there is nothing left to agree about.
+  Counted out       ->
+    stay session { note = Just (Result out), dead = Nothing }
   Lost why          -> stay session { standing = Gone why }
 
 -- | The other side said where the game stands, so that is where it

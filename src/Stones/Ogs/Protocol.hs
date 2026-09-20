@@ -20,6 +20,8 @@ module Stones.Ogs.Protocol
   , encodeMove
   , decodeMove
   , decodeStones
+  , encodeStones
+  , resultFrom
   , moverOf
   , openingFrom
   , clockFrom
@@ -155,6 +157,27 @@ decodeStones text = case Text.unpack (Text.take 2 text) of
     let n = fromEnum letter - fromEnum 'a'
     in  if n >= 0 && n < 26 then Just n else Nothing
 
+-- | Stones as the server writes a set of them: two letters each, with
+-- nothing between them.
+encodeStones :: [Coord] -> Text
+encodeStones stones =
+  Text.concat [ encodeMove (Play stone) | stone <- stones ]
+
+-- | What a game came to, out of what the server says about it once it
+-- has finished.
+--
+-- Written the way a score is written everywhere else: the winner's
+-- initial, a plus, and what they won by. The server gives the winner
+-- as a player number rather than as a colour, so it is matched against
+-- the two players it names alongside.
+resultFrom :: Value -> Maybe Text
+resultFrom body = do
+  outcome <- fieldOf "outcome" body >>= asString
+  winner  <- fieldOf "winner" body >>= asWhole
+  black   <- fieldOf "black_player_id" body >>= asWhole
+  let side = if winner == black then "B" else "W"
+  Just (side <> "+" <> outcome)
+
 -- | Whose move that was, in a game where this colour moved first.
 --
 -- The server says which move it was and not who made it, so it has to
@@ -276,6 +299,26 @@ outgoing table = \case
         ]
       )
     ]
+  Marking stones dead ->
+    [ ( "game/removed_stones/set"
+      , object
+        [ "game_id" .= table.identifier
+        , "stones" .= encodeStones stones
+        , "removed" .= dead
+        ]
+      )
+    ]
+  Accepting stones ->
+    [ ( "game/removed_stones/accept"
+      , object
+        [ "game_id" .= table.identifier
+        , "stones" .= encodeStones stones
+          -- Seki is counted the ordinary way, which is what the server
+          -- does when nobody says otherwise.
+        , "strict_seki_mode" .= False
+        ]
+      )
+    ]
   TookBack count ->
     [ ( "game/undo/request"
       , object
@@ -308,8 +351,30 @@ incoming table name arguments = do
       person <- field "username" line >>= asText
       said   <- field "body" line >>= asText
       Just (Spoke person said)
-    "gamedata" -> Just (either Lost Began (openingFrom table.me body))
+    -- A game that has finished sends the whole of itself again, with
+    -- what it came to in it. Reading that as a game starting would put
+    -- the board back up and throw the result away.
+    "gamedata" -> case fieldOf "phase" body >>= asString of
+      Just "finished" -> Counted <$> resultFrom body
+      _               -> Just (either Lost Began (openingFrom table.me body))
     "clock" -> Ticked <$> clockFrom body
+    -- A game that has finished says so twice: once here, with nothing
+    -- but the word, and once as the whole game again with the result
+    -- in it. The second is the one acted on, because it is the one
+    -- that says what the game came to. If it turns out not to arrive,
+    -- a game would sit here showing a finished board with an Accept
+    -- button that does nothing, which is wrong but is not a lie.
+    "phase" -> case asString body of
+      Just "stone removal" -> Just Stopped
+      _                    -> Nothing
+    -- The whole set of dead stones rather than what changed, so a
+    -- window that missed one is not left showing a board nobody else
+    -- can see. An event without the whole set in it is nothing to act
+    -- on, because a set worked out from a change is a set that can be
+    -- wrong, and a wrong one would have this player agreeing to a
+    -- count they cannot see.
+    "removed_stones" ->
+      Removing . decodeStones <$> (fieldOf "all_removed" body >>= asString)
     "undo_accepted" -> do
       number <- asInt body
       Just (Undid (max 0 (table.played - number)))
