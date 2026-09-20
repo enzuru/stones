@@ -633,7 +633,8 @@ prop_theTitleSaysToCountTheGame = withTests 1 . property $ do
   stateOf beingCounted === "Count the game"
   -- Nothing about counting is written on the board, so what to do with
   -- it has to be written under the title.
-  aboutGame beingCounted === "Click a group to mark it dead, then accept"
+  aboutGame beingCounted
+    === "nobody  \183  Click a group to mark it dead, then accept"
 
 prop_theSameButtonPassesAndThenAccepts :: Property
 prop_theSameButtonPassesAndThenAccepts = withTests 1 . property $ do
@@ -724,7 +725,10 @@ prop_theSubtitleShowsWhatEachSideHasLeft = withTests 1 . property $ do
 
 prop_theSubtitleCarriesTheNumbers :: Property
 prop_theSubtitleCarriesTheNumbers = withTests 1 . property $ do
-  aboutGame inPlay === capturesOf inPlay
+  -- Who the game is against, and then the numbers. The name is here
+  -- as well as on the tab, because a window with one game in it has no
+  -- tab bar to put it on.
+  aboutGame inPlay === "nobody  \183  " <> capturesOf inPlay
   capturesOf inPlay === "9\215\&9  \183  Black 0  \183  White 0"
   capturesOf (starting (board White 19)) === "19\215\&19  \183  Black 0  \183  White 0"
 
@@ -734,13 +738,15 @@ prop_theSubtitleGivesWayToNews = withTests 1 . property $ do
   -- engine that has gone all have more to say than the counts do.
   let passed = onceMore inPlay Passed
       scored = onceMore passed (Arrived (Counted "B+2.5"))
-  aboutGame scored === "Result: B+2.5"
+  aboutGame scored === "nobody  \183  Result: B+2.5"
 
   let played = onceMore inPlay (Clicked (Coord 3 3))
       back   = onceMore played (Arrived (Played White (Play (Coord 4 4))))
       onTop  = onceMore back (Clicked (Coord 3 3))
-  aboutGame onTop === describeIllegal Occupied
+  aboutGame onTop === "nobody  \183  " <> describeIllegal Occupied
 
+  -- An opponent that is gone has no name left to put in front of it,
+  -- and why it went is the whole of what there is to say.
   aboutGame (couldNotOpen "no such program" (starting (board Black 9)))
     === "no such program"
 

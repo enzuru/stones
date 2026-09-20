@@ -96,7 +96,7 @@ prop_aWindowWithNoGamesIsStillAWindow = withTests 1 . property $ do
 prop_theWindowSaysWhereTheGameStands :: Property
 prop_theWindowSaysWhereTheGameStands = withTests 1 . property $ do
   titles <- evalIO (built oneGame titlesUnder)
-  titles === [("Your move", capturesOf (theGame oneGame))]
+  titles === [("Your move", aboutGame (theGame oneGame))]
 
 prop_theWindowIsBuiltOfTheWidgetsItSaysItIs :: Property
 prop_theWindowIsBuiltOfTheWidgetsItSaysItIs = withTests 1 . property $ do
@@ -153,7 +153,7 @@ prop_aPatchedWindowShowsTheNewGame = withTests 1 . property $ do
     made    <- create (view' oneGame)
     patched <- apply made (view' oneGame) (view' played)
     titlesUnder =<< widgetOf patched
-  titles === [("Thinking\8230", capturesOf (theGame played))]
+  titles === [("Thinking\8230", aboutGame (theGame played))]
 
 prop_aWindowWithABrokenGameSaysWhy :: Property
 prop_aWindowWithABrokenGameSaysWhy = withTests 1 . property $ do
@@ -303,7 +303,7 @@ prop_aGameBeingCountedStillBuildsAWindow = withTests 1 . property $ do
     areas   <- descendantsOf Gtk.DrawingArea widget'
     buttons <- descendantsOf Gtk.Button widget'
     pure (titles, length areas, length buttons)
-  titles === [("Count the game", "Click a group to mark it dead, then accept")]
+  titles === [("Count the game", "nobody  \183  Click a group to mark it dead, then accept")]
   areas === 1
   assert (buttons >= 2)
 
@@ -423,6 +423,42 @@ prop_somethingSaidOutOfViewPatchesTheWindowRatherThanRebuildingIt =
       made <- create (view' oneGame)
       pure (decision made (view' oneGame) (view' heard))
     said === Modified
+
+prop_aTabSaysWhoItIsAgainstAndHowLongIsLeft :: Property
+prop_aTabSaysWhoItIsAgainstAndHowLongIsLeft = withTests 1 . property $ do
+  -- Several games at once and one of them about to run out is the
+  -- thing worth glancing across a row of tabs for.
+  let clock = Clock { black   = Time { seconds = 598, periods = 0, each = 0 }
+                    , white   = Time { seconds = 61, periods = 0, each = 0 }
+                    , running = Just Black
+                    }
+      timed = next oneGame (InTab 1 (Arrived (Ticked clock)))
+  titles <- evalIO (tabTitlesOf timed)
+  -- This player has Black in this game, so it is Black's clock that
+  -- says how long they have.
+  titles === ["nobody  \183  9:58"]
+  -- A game nobody is timing says who, and nothing else.
+  plain <- evalIO (tabTitlesOf oneGame)
+  plain === ["nobody"]
+  -- And a game that has ended does not say how long is left in it,
+  -- because that is not news about a game nobody is playing.
+  done <- evalIO (tabTitlesOf (next timed (InTab 1 ResignPressed)))
+  done === ["nobody"]
+
+-- | What the tabs of a window are called.
+tabTitlesOf :: State -> IO [Text]
+tabTitlesOf state = do
+  widget' <- runUI (widgetOf =<< create (view' state))
+  settle
+  runUI $ do
+    views <- descendantsOf Adw.TabView widget'
+    case views of
+      [view] -> do
+        count <- Adw.tabViewGetNPages view
+        traverse
+          (\at -> Adw.tabPageGetTitle =<< Adw.tabViewGetNthPage view at)
+          [0 .. count - 1]
+      _ -> pure []
 
 prop_theMenuComesFromTheMarkup :: Property
 prop_theMenuComesFromTheMarkup = withTests 1 . property $ do

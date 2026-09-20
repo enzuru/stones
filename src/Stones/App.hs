@@ -728,14 +728,21 @@ ending session = case winnerByResignation session.game of
 aboutGame :: Session -> Text
 aboutGame session = case session.standing of
   Gone why -> why
-  -- While the game is being counted the numbers are not the thing to
-  -- say. Nothing about counting is written on the board, so what the
-  -- player is meant to do with it has to be.
-  _ | settling session -> "Click a group to mark it dead, then accept"
-  _        -> case session.note of
-    Just (Result  out ) -> "Result: " <> out
-    Just (Refused what) -> describeIllegal what
-    Nothing             -> capturesOf session
+  -- Who the game is against goes here as well as on the tab, because
+  -- a window with one game in it has no tabs: the bar hides itself
+  -- rather than showing a row of one.
+  Here it  -> it.name <> "  \183  " <> saying
+  _        -> saying
+ where
+  saying
+    -- While the game is being counted the numbers are not the thing to
+    -- say. Nothing about counting is written on the board, so what the
+    -- player is meant to do with it has to be.
+    | settling session = "Click a group to mark it dead, then accept"
+    | otherwise = case session.note of
+      Just (Result  out ) -> "Result: " <> out
+      Just (Refused what) -> describeIllegal what
+      Nothing             -> capturesOf session
 
 -- | The board, how many stones each player has taken, and, in a game
 -- that is timed, how long each has left.
@@ -791,8 +798,19 @@ gameTabs state = tabView
 -- somewhere else, not here.
 titleOf :: Session -> Text
 titleOf session = case session.standing of
-  Here it -> it.name
+  Here it -> it.name <> left
   _       -> "Game"
+ where
+  -- How long this player has left in this game, which is the thing
+  -- worth glancing across a row of tabs for: several games at once and
+  -- one of them about to run out. Not once it has ended, because the
+  -- time left in a game nobody is playing is not news.
+  left
+    | finished session.game = ""
+    | otherwise = maybe
+      ""
+      (("  \183  " <>) . describeTime)
+      (clockOf session session.human)
 
 -- | One game's board, with a little room around it so that the wood
 -- does not touch the edge of the window.
