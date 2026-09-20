@@ -51,9 +51,7 @@ import qualified Stones.Ogs.Account            as Account
 import           Stones.Ogs.Frame               ( Packet(..) )
 import qualified Stones.Ogs.Challenge          as Challenge
 import qualified Stones.Ogs.Login              as Login
-import           Stones.Ogs.Seek                ( Seek(..)
-                                                , Speed(..)
-                                                )
+import           Stones.Ogs.Seek                ( Seek(..) )
 import qualified Stones.Ogs.Seek               as Seek
 import           Stones.Ogs.Socket              ( Socket(..) )
 import qualified Stones.Ogs.Socket             as Socket
@@ -190,7 +188,7 @@ finding log' outside who held setup = readIORef who >>= \case
 -- | A game against whoever else is looking for the same one.
 looking :: Log -> Signed -> Socket -> Setup -> IO (Either Text Opponent)
 looking log' signed connection setup = do
-  seek <- Seek.newSeek setup.size Live
+  seek <- Seek.newSeek setup
   -- Whatever this stops for, the looking is called off: a game, a
   -- refusal, time running out, or the tab being closed while it
   -- waits. A looking left running is somebody else paired into a

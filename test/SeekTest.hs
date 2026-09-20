@@ -26,10 +26,19 @@ import qualified Hedgehog.Gen                  as Gen
 
 import           Stones.Ogs.Frame               ( Packet(..) )
 import           Stones.Ogs.Seek
+import           Stones.Setup
+
+-- | A 9x9 blitz game against anybody.
+wanted :: Setup
+wanted = defaultSetup { against  = Online
+                      , size     = 9
+                      , speed    = Blitz
+                      , handicap = 0
+                      }
 
 -- | One that is being looked for.
 looking :: Seek
-looking = Seek { name = "a-name", size = 9, speed = Blitz }
+looking = Seek { name = "a-name", wants = wanted }
 
 -- | What the server says when it finds one.
 found :: Text -> Int -> Value
@@ -55,32 +64,37 @@ prop_askingSaysWhatKindOfGameIsWanted = withTests 1 . property $ do
                 , "value" .= ("japanese" :: Text)
                 ]
               , "handicap" .= object
-                [ "condition" .= ("no-preference" :: Text)
-                , "value" .= ("enabled" :: Text)
+                [ "condition" .= ("preferred" :: Text)
+                , "value" .= ("disabled" :: Text)
                 ]
               ]
           ]
           Nothing
 
-prop_handicapIsLeftOpen :: Property
-prop_handicapIsLeftOpen = withTests 1 . property $ do
-  -- The server says where a game starts when it is joined, stones and
-  -- all, so a handicap is a board with stones on it already rather
-  -- than something to avoid.
-  size <- forAll (Gen.element [9, 13, 19])
-  fast <- forAll (Gen.element speeds)
-  case finding Seek { name = "n", size = size, speed = fast } of
-    Event _ [body] _ -> assert (asks body "handicap" "no-preference" "enabled")
+prop_aHandicapIsAskedForRatherThanCounted :: Property
+prop_aHandicapIsAskedForRatherThanCounted = property $ do
+  -- Nobody picks how many. The server says where a game starts when it
+  -- is joined, stones and all, so what is asked for here is a
+  -- willingness to start on a board that already has some.
+  size  <- forAll (Gen.element [9, 13, 19])
+  fast  <- forAll (Gen.element speeds)
+  stone <- forAll (Gen.element handicaps)
+  let asked = Seek
+        { name  = "n"
+        , wants = wanted { size = size, speed = fast, handicap = stone }
+        }
+      want = if stone > 0 then "enabled" else "disabled"
+  case finding asked of
+    Event _ [body] _ -> assert (asks body "handicap" "preferred" want)
     other            -> annotateShow other >> failure
 
 prop_everyBoardAndSpeedHasAName :: Property
 prop_everyBoardAndSpeedHasAName = withTests 1 . property $ do
-  map describeSpeed speeds
-    === ["blitz", "rapid", "live", "correspondence"]
-  case finding looking { size = 19 } of
+  map speedName speeds === ["blitz", "rapid", "live", "correspondence"]
+  case finding looking { wants = wanted { size = 19 } } of
     Event _ [body] _ -> assert (mentions body "19x19")
     other            -> annotateShow other >> failure
-  case finding looking { size = 13, speed = Correspondence } of
+  case finding looking { wants = wanted { size = 13, speed = Correspondence } } of
     Event _ [body] _ -> do
       assert (mentions body "13x13")
       assert (mentions body "correspondence")
@@ -108,11 +122,12 @@ prop_somebodyElsesAnswerIsNotOurs = withTests 1 . property $ do
 
 prop_twoLookingsAreNotTheSameLooking :: Property
 prop_twoLookingsAreNotTheSameLooking = property $ do
-  one   <- evalIO (newSeek 9 Blitz)
-  other <- evalIO (newSeek 9 Blitz)
+  one   <- evalIO (newSeek wanted)
+  other <- evalIO (newSeek wanted)
   assert (one.name /= other.name)
-  one.size === 9
-  one.speed === Blitz
+  -- And each one is looking for what it was asked to look for.
+  one.wants === wanted
+  other.wants === wanted
   -- Eight, four, four, four and twelve, with the dashes between them.
   Text.length one.name === 36
   Text.count "-" one.name === 4
@@ -131,7 +146,7 @@ asks body key condition value = case body of
 
 -- | Whether this text appears anywhere in a payload.
 mentions :: Value -> Text -> Bool
-mentions body wanted = Text.isInfixOf wanted (Text.pack (show body))
+mentions body word = Text.isInfixOf word (Text.pack (show body))
 
 -- | A field of an object, whatever aeson calls its keys this week.
 lookupKey :: Aeson.Object -> Text -> Maybe Value

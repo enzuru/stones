@@ -23,6 +23,8 @@ import           Stones.Setup
 choice :: Gen SetupEvent
 choice = Gen.choice
   [ ChosePlace <$> Gen.element places
+  , ChoseSpeed <$> Gen.element speeds
+  , ChoseRanked <$> Gen.element [False, True]
   , ChoseBoard <$> Gen.element boardWidths
   , ChoseSide <$> Gen.element [Black, White]
   , ChoseStrength <$> Gen.element strengths
@@ -48,9 +50,11 @@ prop_aChoiceChangesTheOneThingItIsAbout :: Property
 prop_aChoiceChangesTheOneThingItIsAbout = withTests 1 . property $ do
   chose defaultSetup (ChoseBoard 9) === defaultSetup { size = 9 }
   chose defaultSetup (ChoseSide White)
-    === Setup { against = Computer, size = 19, human = White, strength = Fierce, handicap = 0, versus = "" }
+    === Setup { against = Computer, size = 19, human = White, strength = Fierce, handicap = 0, speed = Live, ranked = False, versus = "" }
   chose defaultSetup (ChoseStrength Gentle) === defaultSetup { strength = Gentle }
   chose defaultSetup (ChosePlace Online) === defaultSetup { against = Online }
+  chose defaultSetup (ChoseSpeed Blitz) === defaultSetup { speed = Blitz }
+  chose defaultSetup (ChoseRanked True) === defaultSetup { ranked = True }
   -- Signing in is not a choice about the game. It is about the window,
   -- and the page holds what it held.
   chose defaultSetup SignInPressed === defaultSetup
@@ -72,12 +76,13 @@ prop_everyChoiceSticks = property $ do
   assert (after.size `elem` boardWidths)
   assert (after.strength `elem` strengths)
   assert (after.against `elem` places)
+  assert (after.speed `elem` speeds)
 
 prop_thePageSaysWhatItIsAskingFor :: Property
 prop_thePageSaysWhatItIsAskingFor = withTests 1 . property $ do
   describeSetup defaultSetup === "19\215\&19  \183  Black  \183  Fierce"
   describeSetup
-      Setup { against = Computer, size = 9, human = White, strength = Gentle, handicap = 0, versus = "" }
+      Setup { against = Computer, size = 9, human = White, strength = Gentle, handicap = 0, speed = Live, ranked = False, versus = "" }
     === "9\215\&9  \183  White  \183  Gentle"
 
 prop_aPageAskingAboutAServerSaysNothingAboutAnEngine :: Property
@@ -87,9 +92,31 @@ prop_aPageAskingAboutAServerSaysNothingAboutAnEngine =
     -- on the other side, so naming either here would be saying
     -- something this program does not know yet.
     let online = defaultSetup { against = Online }
-    describeSetup online === "19\215\&19  \183  online-go.com"
+    describeSetup online === "19\215\&19  \183  online-go.com  \183  Live"
     describeSetup online { size = 9, human = White, strength = Gentle }
-      === "9\215\&9  \183  online-go.com"
+      === "9\215\&9  \183  online-go.com  \183  Live"
+    -- What it does say is what that place was asked for.
+    describeSetup online { speed = Blitz, ranked = True, versus = "amybot" }
+      === "19\215\&19  \183  online-go.com  \183  Blitz  \183  Ranked  \183  amybot"
+    describeSetup online { handicap = 4 }
+      === "19\215\&19  \183  online-go.com  \183  Live  \183  4 stones"
+
+prop_everySpeedHasOneNameHereAndAnotherOnTheWire :: Property
+prop_everySpeedHasOneNameHereAndAnotherOnTheWire =
+  withTests 1 . property $ do
+    -- The server's word and the player's word are not always the same
+    -- word. Nobody calls a correspondence game a correspondence game.
+    map describeSpeed speeds === ["Blitz", "Rapid", "Live", "Daily"]
+    map speedName speeds === ["blitz", "rapid", "live", "correspondence"]
+    length speeds === 4
+
+prop_nothingCountsTowardsARankUnlessItIsAskedFor :: Property
+prop_nothingCountsTowardsARankUnlessItIsAskedFor =
+  withTests 1 . property $ do
+    -- A rank belongs to the person who earned it, and a program plays
+    -- some of these games.
+    defaultSetup.ranked === False
+    defaultSetup.speed === Live
 
 prop_thereAreTwoPlacesToPlayAndBothHaveNames :: Property
 prop_thereAreTwoPlacesToPlayAndBothHaveNames = withTests 1 . property $ do

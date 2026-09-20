@@ -18,9 +18,6 @@
 -- answer names the seek it answers rather than the person who made it.
 module Stones.Ogs.Seek
   ( Seek(..)
-  , Speed(..)
-  , speeds
-  , describeSpeed
   , newSeek
   , finding
   , cancelling
@@ -39,43 +36,25 @@ import qualified Data.Text                     as Text
 import           System.Random                  ( randomRIO )
 
 import           Stones.Ogs.Frame               ( Packet(..) )
-
--- | How long a game is allowed to take.
-data Speed
-  = Blitz
-  | Rapid
-  | Live
-  | Correspondence
-  deriving (Eq, Ord, Show, Enum, Bounded)
-
--- | Every speed, quickest first.
-speeds :: [Speed]
-speeds = [minBound .. maxBound]
-
--- | What the server calls one, which is also what to call it in the
--- window.
-describeSpeed :: Speed -> Text
-describeSpeed = \case
-  Blitz          -> "blitz"
-  Rapid          -> "rapid"
-  Live           -> "live"
-  Correspondence -> "correspondence"
+import           Stones.Setup                   ( Setup(..)
+                                                , speedName
+                                                )
 
 -- | A game being looked for.
 data Seek = Seek
   { name  :: Text
     -- ^ What this looking is called, which is how its answer is told
     -- from anybody else's.
-  , size  :: Int
-  , speed :: Speed
+  , wants :: Setup
+    -- ^ What is being looked for.
   }
   deriving (Eq, Show)
 
 -- | Start looking for a game of this shape.
-newSeek :: Int -> Speed -> IO Seek
-newSeek size speed = do
+newSeek :: Setup -> IO Seek
+newSeek wants = do
   name <- newName
-  pure Seek { name = name, size = size, speed = speed }
+  pure Seek { name = name, wants = wants }
 
 -- | A name no other looking is likely to have.
 newName :: IO Text
@@ -90,12 +69,14 @@ newName = do
 
 -- | The frame that asks for a game.
 --
--- Nothing here is required except by accident. Japanese rules are
--- asked for rather than insisted on, because they settle a repeated
--- position the way this program's own rules do, and a game is better
--- than a perfect match. Handicap is left open: the server says where a
--- game starts when it is joined, stones and all, so a handicap is a
--- board with stones on it already rather than something to avoid.
+-- Japanese rules are asked for rather than insisted on, because they
+-- settle a repeated position the way this program's own rules do, and
+-- a game is better than a perfect match.
+--
+-- A handicap asked for is asked for the same way. Nobody picks how
+-- many: the server says where a game starts when it is joined, stones
+-- and all, so a handicap here is a willingness to start on a board
+-- that already has some, rather than a number.
 finding :: Seek -> Packet
 finding seek = Event
   "automatch/find_match"
@@ -107,16 +88,16 @@ finding seek = Event
       , "rules" .= object
         ["condition" .= ("preferred" :: Text), "value" .= ("japanese" :: Text)]
       , "handicap" .= object
-        [ "condition" .= ("no-preference" :: Text)
-        , "value" .= ("enabled" :: Text)
+        [ "condition" .= ("preferred" :: Text)
+        , "value" .= (if seek.wants.handicap > 0 then "enabled" else "disabled" :: Text)
         ]
       ]
   ]
   Nothing
  where
   option = object
-    [ "size" .= boardName seek.size
-    , "speed" .= describeSpeed seek.speed
+    [ "size" .= boardName seek.wants.size
+    , "speed" .= speedName seek.wants.speed
     , "system" .= ("byoyomi" :: Text)
     ]
 

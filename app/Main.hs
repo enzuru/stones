@@ -41,8 +41,11 @@ import           Go.Types
 import qualified Stones.App                    as Stones
 import           Stones.Files                   ( dataFile )
 import qualified Stones.Menu                   as Menu
-import           Stones.Setup                   ( Strength
+import           Stones.Setup                   ( Speed
+                                                , Strength
+                                                , describeSpeed
                                                 , describeStrength
+                                                , speeds
                                                 , strengths
                                                 )
 import           Stones.Setup                   ( Against(..)
@@ -113,6 +116,20 @@ options =
                    \board takes fewer, and the engine says so if it will \
                    \not place them."
               )
+        <*> option
+              speedNamed
+              (  long "speed"
+              <> metavar "NAME"
+              <> value defaultSetup.speed
+              <> showDefaultWith (Text.unpack . describeSpeed)
+              <> help ("How long a game at online-go.com may take: " <> paces)
+              )
+        <*> switch
+              (  long "ranked"
+              <> help
+                   "Play games at online-go.com for rank. Nothing counts \
+                   \towards one unless this is asked for."
+              )
         <*> strOption
               (  long "versus"
               <> metavar "NAME"
@@ -142,7 +159,18 @@ options =
                  \actually says."
             )
           )
-  where names = List.intercalate ", " (map (Text.unpack . describeStrength) strengths)
+  where
+  names = List.intercalate ", " (map (Text.unpack . describeStrength) strengths)
+  paces = List.intercalate ", " (map (Text.unpack . describeSpeed) speeds)
+
+-- | A speed by name, in any case, because a command line is typed.
+speedNamed :: ReadM Speed
+speedNamed = do
+  given <- str
+  case [ how | how <- speeds, matches how given ] of
+    how : _ -> pure how
+    []      -> readerError ("there is no speed called " <> given)
+  where matches how given = lower (describeSpeed how) == lower (Text.pack given)
 
 -- | A strength by name, in any case, because a command line is typed.
 strength :: ReadM Strength

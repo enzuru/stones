@@ -66,7 +66,7 @@ noGames = startingState source asking
 
 -- | What the page of a new tab asks for here.
 asking :: Setup
-asking = Setup { against = Computer, size = 9, human = Black, strength = Fierce, handicap = 0, versus = "" }
+asking = Setup { against = Computer, size = 9, human = Black, strength = Fierce, handicap = 0, speed = Live, ranked = False, versus = "" }
 
 -- | A window with one tab, still on the page that asks what to play.
 onePage :: State
@@ -219,11 +219,15 @@ prop_thePageAsksOnlyWhatThePlaceItIsAboutCanAnswer =
       groups <- descendantsOf Adw.ToggleGroup widget'
       titles <- traverse Adw.preferencesRowGetTitle rows
       pure (length rows, length groups, titles)
-    -- Where to play, which board, and who the player is.
-    rows === 3
-    -- The account row has a button rather than a group of toggles.
-    groups === 2
-    titles === ["Play", "Play on", "Account"]
+    -- Five things to choose from, and the account, which has a button
+    -- on it rather than a group of toggles. The name is typed into a
+    -- row of its own kind, counted below.
+    rows === 6
+    groups === 5
+    titles === ["Play", "Play on", "Speed", "Rank", "Handicap", "Account"]
+    typed <- evalIO . built onlinePage $ \widget' ->
+      length <$> descendantsOf Adw.EntryRow widget'
+    typed === 1
 
 prop_theOpponentRowShowsTheNameThePageHolds :: Property
 prop_theOpponentRowShowsTheNameThePageHolds = withTests 1 . property $ do

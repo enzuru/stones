@@ -23,6 +23,10 @@ module Stones.Setup
   , Against(..)
   , places
   , describePlace
+  , Speed(..)
+  , speeds
+  , describeSpeed
+  , speedName
   , Signing(..)
   , describeSigning
   , signedIn
@@ -108,6 +112,37 @@ describePlace :: Against -> Text
 describePlace Computer = "This computer"
 describePlace Online   = "online-go.com"
 
+-- | How long a game is allowed to take.
+--
+-- Only a game on a server asks. A program on this machine answers as
+-- fast as it answers, and nobody is waiting on the other side of it.
+data Speed
+  = Blitz
+  | Rapid
+  | Live
+  | Correspondence
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
+-- | Every speed, quickest first, which is the order a menu shows them.
+speeds :: [Speed]
+speeds = [minBound .. maxBound]
+
+-- | What to call one in the window.
+describeSpeed :: Speed -> Text
+describeSpeed = \case
+  Blitz          -> "Blitz"
+  Rapid          -> "Rapid"
+  Live           -> "Live"
+  Correspondence -> "Daily"
+
+-- | What the server calls one.
+speedName :: Speed -> Text
+speedName = \case
+  Blitz          -> "blitz"
+  Rapid          -> "rapid"
+  Live           -> "live"
+  Correspondence -> "correspondence"
+
 -- | How far the player has got with signing in.
 --
 -- Only one place asks for it, and the page only shows this when that
@@ -147,6 +182,10 @@ data Setup = Setup
     -- ^ How hard the opponent is asked to try.
   , handicap :: Int
     -- ^ How many stones the player starts with down, or none.
+  , speed    :: Speed
+    -- ^ How long a game on a server is allowed to take.
+  , ranked   :: Bool
+    -- ^ Whether a game on a server counts towards a rank.
   , versus   :: Text
     -- ^ Who to ask for a game, by name, or nobody in particular.
     --
@@ -187,6 +226,12 @@ defaultSetup = Setup { against  = Computer
                      , human    = Black
                      , strength = Fierce
                      , handicap = 0
+                     , speed    = Live
+                       -- A rank belongs to the person who earned it,
+                       -- and a program plays some of these games, so
+                       -- nothing counts towards one unless it is asked
+                       -- for.
+                     , ranked   = False
                      , versus   = ""
                      }
 
@@ -202,6 +247,8 @@ data SetupEvent
   | ChoseSide Color
   | ChoseStrength Strength
   | ChoseHandicap Int
+  | ChoseSpeed Speed
+  | ChoseRanked Bool
   | ChoseVersus Text
   | StartPressed
   | SignInPressed
@@ -219,6 +266,8 @@ chose setup = \case
   ChoseSide side      -> setup { human = side }
   ChoseStrength which -> setup { strength = which }
   ChoseHandicap n     -> setup { handicap = n }
+  ChoseSpeed how      -> setup { speed = how }
+  ChoseRanked counts  -> setup { ranked = counts }
   ChoseVersus who     -> setup { versus = who }
   StartPressed        -> setup
   SignInPressed       -> setup
@@ -232,8 +281,12 @@ describeSetup setup = Text.intercalate "  \183  " (board : rest)
   -- the colour and the opponent on the other side, so naming either
   -- here would be saying something this program does not know.
   rest  = case setup.against of
-    Online | Text.null (versusOf setup) -> [describePlace Online]
-           | otherwise -> [describePlace Online, versusOf setup]
+    -- Where, because a speed on its own could be anywhere, whereas a
+    -- strength is a thing only a program has.
+    Online -> [describePlace Online, describeSpeed setup.speed]
+      <> [ "Ranked" | setup.ranked ]
+      <> stones
+      <> [ versusOf setup | not (Text.null (versusOf setup)) ]
     Computer -> [colorWord setup.human, describeStrength setup.strength] <> stones
   stones | setup.handicap < 2 = []
          | otherwise = [describeHandicap setup.handicap <> " stones"]
@@ -292,7 +345,24 @@ launchPage signing setup = bin
   -- The page asks for what that place can answer, and for nothing
   -- else. A row that did nothing would be worse than no row at all.
   rows = case setup.against of
-    Online   -> [where', board, versus', account]
+    Online ->
+      [ where'
+      , board
+      , choice "Speed"
+               [ (describeSpeed how, describeSpeed how, how) | how <- speeds ]
+               setup.speed
+               ChoseSpeed
+      , choice "Rank"
+               [("unranked", "Unranked", False), ("ranked", "Ranked", True)]
+               setup.ranked
+               ChoseRanked
+      , choice "Handicap"
+               [ (describeHandicap n, describeHandicap n, n) | n <- handicaps ]
+               setup.handicap
+               ChoseHandicap
+      , versus'
+      , account
+      ]
     Computer ->
       [ where'
       , board

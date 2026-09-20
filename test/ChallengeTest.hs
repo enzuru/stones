@@ -28,7 +28,10 @@ import qualified Hedgehog.Gen                  as Gen
 import           Go.Types
 import           Stones.Ogs.Challenge
 import           Stones.Setup                   ( Against(..)
+                                                , speedName
+                                                , speeds
                                                 , Setup(..)
+                                                , Speed(..)
                                                 , Strength(..)
                                                 , handicaps
                                                 )
@@ -36,7 +39,7 @@ import           Stones.Setup                   ( Against(..)
 -- | A game to ask for.
 wanted :: Setup
 wanted =
-  Setup { against = Computer, size = 9, human = Black, strength = Gentle, handicap = 0, versus = "" }
+  Setup { against = Computer, size = 9, human = Black, strength = Gentle, handicap = 0, speed = Live, ranked = False, versus = "" }
 
 -- | A field of what is asked for.
 askedFor :: Setup -> Text -> Maybe Value
@@ -71,6 +74,33 @@ prop_theClockIsLongBecauseNobodyWasAskedWhatItShouldBe =
     (clock >>= field "main_time") === Just (Number 600)
     (clock >>= field "period_time") === Just (Number 60)
     (clock >>= field "periods") === Just (Number 5)
+
+prop_theClockFollowsTheSpeedThatWasAskedFor :: Property
+prop_theClockFollowsTheSpeedThatWasAskedFor = property $ do
+  how <- forAll (Gen.element speeds)
+  let clock = ofGame wanted { speed = how } "time_control_parameters"
+      whole key = case clock >>= field key of
+        Just (Number n) -> Just (round n :: Int)
+        _               -> Nothing
+      think = whole "main_time"
+      each  = whole "period_time"
+  -- The speed the server was asked for is the speed it is told.
+  (clock >>= field "speed") === Just (String (speedName how))
+  -- A quicker game has a shorter clock, in both halves of it, and a
+  -- daily game is measured in days.
+  case how of
+    Blitz          -> (think, each) === (Just 30, Just 10)
+    Rapid          -> (think, each) === (Just 120, Just 20)
+    Live           -> (think, each) === (Just 600, Just 60)
+    Correspondence -> (think, each) === (Just (3 * 86400), Just 86400)
+
+prop_aGameCountsTowardsARankOnlyWhenItIsAskedTo :: Property
+prop_aGameCountsTowardsARankOnlyWhenItIsAskedTo =
+  withTests 1 . property $ do
+    -- A rank belongs to the person who earned it, and a program plays
+    -- some of these games, so it has to be asked for.
+    ofGame wanted "ranked" === Just (Bool False)
+    ofGame wanted { ranked = True } "ranked" === Just (Bool True)
 
 prop_theBoardAndTheStonesAreWhatWasChosen :: Property
 prop_theBoardAndTheStonesAreWhatWasChosen = property $ do

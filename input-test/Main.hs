@@ -109,6 +109,8 @@ main = do
                                         , human    = Black
                                         , strength = Gentle
                                         , handicap = 0
+                                        , speed    = Live
+                                        , ranked   = False
                                         , versus   = ""
                                         }
   void (run window { update = reporting

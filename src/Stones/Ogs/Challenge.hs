@@ -55,7 +55,10 @@ import qualified Network.HTTP.Client           as Http
 import qualified Network.HTTP.Client.TLS       as Http
 
 import           Go.Types
-import           Stones.Setup                   ( Setup(..) )
+import           Stones.Setup                   ( Setup(..)
+                                                , Speed(..)
+                                                , speedName
+                                                )
 
 -- | What a challenge that was taken up comes back as.
 data Started = Started
@@ -77,11 +80,11 @@ instance FromJSON Started where
 -- Unranked, always. A rank belongs to the person who earned it, and
 -- these are games played by a program to find out whether it works.
 --
--- An ordinary live clock. Nothing on the page asks what it should be,
--- so it has to be a time nobody loses to by accident, and it also has
--- to be one the other side will take: a program asked for a game
--- usually has a limit on how long a game it will sit through, and a
--- challenge over that limit is refused rather than played.
+-- The clock comes from the speed that was asked for. It also has to be
+-- one the other side will take: a program asked for a game usually has
+-- a limit on how long a game it will sit through, and a challenge over
+-- that limit is refused rather than played, so these sit inside the
+-- ranges the ones on online-go.com publish.
 asking :: Setup -> Value
 asking setup = object
   [ "challenger_color" .= colorName setup.human
@@ -90,7 +93,7 @@ asking setup = object
   , "game" .= object
     [ "name" .= ("Stones" :: Text)
     , "rules" .= ("japanese" :: Text)
-    , "ranked" .= False
+    , "ranked" .= setup.ranked
     , "width" .= setup.size
     , "height" .= setup.size
     , "handicap" .= setup.handicap
@@ -101,13 +104,28 @@ asking setup = object
     , "time_control" .= ("byoyomi" :: Text)
     , "time_control_parameters" .= object
       [ "system" .= ("byoyomi" :: Text)
-      , "speed" .= ("live" :: Text)
-      , "main_time" .= (600 :: Int)
-      , "period_time" .= (60 :: Int)
+      , "speed" .= speedName setup.speed
+      , "main_time" .= think
+      , "period_time" .= each
       , "periods" .= (5 :: Int)
       ]
     ]
   ]
+  where (think, each) = clockFor setup.speed
+
+-- | The time to think in and the length of one short period after it,
+-- for a game of this speed.
+--
+-- Inside the ranges the programs on online-go.com publish for each
+-- speed, because a challenge outside one of those is refused rather
+-- than played. A day each way for a daily game, which is what makes it
+-- a daily game.
+clockFor :: Speed -> (Int, Int)
+clockFor = \case
+  Blitz          -> (30, 10)
+  Rapid          -> (120, 20)
+  Live           -> (600, 60)
+  Correspondence -> (3 * 86400, 86400)
 
 -- | The word the server uses for a colour.
 colorName :: Color -> Text
