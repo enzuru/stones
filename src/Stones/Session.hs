@@ -409,6 +409,7 @@ arrived session = \case
   Played color move -> theirMove session color move
   Spoke person text ->
     stay session { said = session.said <> [Chat person text] }
+  Hushed            -> stay session { said = [] }
   Undid count       -> tookBack session count
   Ticked clock      -> stay session { clock = Just clock }
   -- The game has stopped. Whatever is already marked stays marked:

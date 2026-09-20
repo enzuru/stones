@@ -207,6 +207,10 @@ data Heard
     -- ^ Who said it, and what they said.
   | Undid Int
     -- ^ This many moves came off over there.
+  | Hushed
+    -- ^ Forget what has been said about this game. A server says this
+    -- before it says the whole conversation over again, which it does
+    -- when a game ends.
   | Stopped
     -- ^ Nobody moves again. What is left is agreeing which stones are
     -- dead, and the game is counted from there.

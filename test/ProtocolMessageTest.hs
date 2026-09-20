@@ -225,6 +225,46 @@ prop_somethingSaidArrivesWithWhoSaidIt = withTests 1 . property $ do
       ]
     === Just (Spoke "someone" "good game")
 
+prop_whatAProgramSaysArrivesAsSomethingToBeTranslated :: Property
+prop_whatAProgramSaysArrivesAsSomethingToBeTranslated =
+  withTests 1 . property $ do
+    -- Word for word what amybot-beginner said at the start of the
+    -- first game this program played. A person's words arrive as they
+    -- were typed; a program's arrive as what it meant, under the name
+    -- of each language it knows. Reading only the first kind threw
+    -- away every hello and every good game.
+    let saidByABot = object
+          [ "channel" .= ("main" :: Text)
+          , "line" .= object
+            [ "body" .= object
+              [ "en" .= ("Good luck, have fun!" :: Text)
+              , "type" .= ("translated" :: Text)
+              ]
+            , "move_number" .= Null
+            , "player_id" .= (605979 :: Int)
+            , "username" .= ("amybot-beginner" :: Text)
+            ]
+          ]
+    incoming table "game/1234/chat" [saidByABot]
+      === Just (Spoke "amybot-beginner" "Good luck, have fun!")
+    -- One with nothing anybody here can read is nothing to say, rather
+    -- than a line with a blank in it.
+    let unreadable = object
+          [ "line" .= object
+            [ "body" .= object ["type" .= ("translated" :: Text)]
+            , "username" .= ("amybot-beginner" :: Text)
+            ]
+          ]
+    incoming table "game/1234/chat" [unreadable] === Nothing
+
+prop_theServerSayingToForgetIsWorthActingOn :: Property
+prop_theServerSayingToForgetIsWorthActingOn = withTests 1 . property $ do
+  -- A game ending sends this and then says the whole conversation over
+  -- again. Ignoring it showed every line twice.
+  incoming table "game/1234/reset-chats" [toJSON (0 :: Int)] === Just Hushed
+  -- And it is about one game, like everything else.
+  incoming table "game/9999/reset-chats" [toJSON (0 :: Int)] === Nothing
+
 prop_anUndoTheOtherPlayerAgreedToComesBackAsMovesOff :: Property
 prop_anUndoTheOtherPlayerAgreedToComesBackAsMovesOff =
   withTests 1 . property $ do

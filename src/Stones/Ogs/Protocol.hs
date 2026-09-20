@@ -91,6 +91,19 @@ asList = \case
   Array items -> Just (Vector.toList items)
   _           -> Nothing
 
+-- | What somebody said, out of the field that carries it.
+--
+-- A person's words arrive as they were typed. A program's arrive as
+-- something to be translated instead: what it meant, under the name of
+-- each language it knows, and English is always one of them. Reading
+-- only the first kind threw away everything any program ever said,
+-- which on a server is every hello and every good game.
+asSpeech :: Value -> Maybe Text
+asSpeech = \case
+  String said     -> Just said
+  said@(Object _) -> fieldOf "en" said >>= asString
+  _               -> Nothing
+
 -- | A colour, as the server writes one.
 asColor :: Value -> Either Text Color
 asColor = \case
@@ -354,8 +367,11 @@ incoming table name arguments = do
     "chat" -> do
       line   <- field "line" body
       person <- field "username" line >>= asText
-      said   <- field "body" line >>= asText
+      said   <- field "body" line >>= asSpeech
       Just (Spoke person said)
+    -- Said before the whole conversation is said again, which is what
+    -- a game ending does. Without it every line would be shown twice.
+    "reset-chats" -> Just Hushed
     -- A game that has finished sends the whole of itself again, with
     -- what it came to in it. Reading that as a game starting would put
     -- the board back up and throw the result away.

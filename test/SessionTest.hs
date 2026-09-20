@@ -305,6 +305,19 @@ prop_anEmptyLineIsNotSomethingToSay = withTests 1 . property $ do
   spoken === [Said "good game"]
   where opening' = opening Black
 
+prop_beingToldToForgetForgetsWhatWasSaid :: Property
+prop_beingToldToForgetForgetsWhatWasSaid = withTests 1 . property $ do
+  -- The server says this and then says the whole conversation over
+  -- again, which is what a game ending does. Keeping what was there
+  -- would show every line twice.
+  let said   = after (after game (Arrived (Spoke "hikaru" "good game")))
+                     (Arrived (Spoke "lenzuru" "you too"))
+      again  = after said (Arrived Hushed)
+      afresh = after again (Arrived (Spoke "hikaru" "good game"))
+  map (.what) said.said === ["good game", "you too"]
+  map (.what) again.said === []
+  map (.what) afresh.said === ["good game"]
+
 prop_whatIsSaidIsNotWrittenDownUntilItComesBack :: Property
 prop_whatIsSaidIsNotWrittenDownUntilItComesBack =
   withTests 1 . property $ do
