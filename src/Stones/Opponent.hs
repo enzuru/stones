@@ -61,6 +61,14 @@ data Opponent = Opponent
     -- ^ Whether there is anybody on the other side to talk to. A
     -- program takes what is said to it and has nothing to say back, so
     -- a window playing one shows no pane to say it in.
+  , again :: Maybe Text
+    -- ^ What to ask for to play this same opponent once more, if they
+    -- are somebody who can be asked for.
+    --
+    -- A program on this machine is nobody in particular: the next one
+    -- started is the same one, so there is nothing to ask for and this
+    -- is nothing. Somebody on a server has a name, and asking for them
+    -- by it is a rematch, which they may turn down.
   }
 
 -- | Where a game gets an opponent, and where it gives one back.

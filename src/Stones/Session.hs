@@ -30,6 +30,7 @@ module Stones.Session
   , canUndo
   , canTalk
   , canPlayAgain
+  , playingAgain
   , settling
   , deadIn
   , canAccept
@@ -321,6 +322,19 @@ canPlayAgain session = case session.standing of
   Starting -> False
   Gone _   -> True
   Here it  -> finished session.game || not it.talks
+
+-- | What to ask for to play this game once more.
+--
+-- The same answers it was started from, and, when the other side is
+-- somebody who can be asked for by name, that name as well. On a
+-- server that turns the next game into a rematch against the same
+-- player rather than a fresh stranger, which is what the website
+-- offers at the end of a game. They may turn it down, and then there
+-- is no game, and the tab says so.
+playingAgain :: Session -> Setup
+playingAgain session = case listening session >>= (.again) of
+  Just who -> session.setup { versus = who }
+  Nothing  -> session.setup
 
 -- | Is there anybody on the other side to talk to?
 --

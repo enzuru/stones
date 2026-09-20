@@ -51,12 +51,13 @@ silent = Opponent { name  = "nobody"
                   , hear  = pure ()
                   , leave = pure ()
                   , talks = True
+                  , again = Just "nobody"
                   }
 
 -- | One that is a program on this machine, which can be stopped and
 -- started again whenever anybody likes.
 program :: Opponent
-program = silent { name = "GNU Go", talks = False }
+program = silent { name = "GNU Go", talks = False, again = Nothing }
 
 -- | A source of opponents that hands out the same silent one.
 source :: Opponents
@@ -357,6 +358,25 @@ prop_startingOverAsksForWhatTheGameWasStartedFrom =
     _    <- ran moved (AgainPressed 1)
     went <- evalIO (readIORef asked)
     went === [asking]
+
+prop_playingAgainOnAServerAsksTheSamePlayer :: Property
+prop_playingAgainOnAServerAsksTheSamePlayer = property $ do
+  -- Somebody paired by the server, whose name nobody here knew until
+  -- the game started.
+  asked <- evalIO (newIORef [])
+  let stranger = silent { name = "hikaru", again = Just "hikaru" }
+      noting   = source
+        { open = \setup -> Right stranger <$ modifyIORef' asked (<> [setup])
+        }
+      played = next
+        (started 1 (next (startingState noting asking) NewTabPressed))
+        (TabOpened 1 (Right stranger))
+      -- The game has to have ended, because walking out of one that
+      -- has not is leaving rather than starting over.
+      over   = next played (InTab 1 ResignPressed)
+  _    <- ran over (AgainPressed 1)
+  went <- evalIO (readIORef asked)
+  went === [asking { versus = "hikaru" }]
 
 prop_startingOverLetsTheOldOpponentGo :: Property
 prop_startingOverLetsTheOldOpponentGo = property $ do

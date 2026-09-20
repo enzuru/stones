@@ -81,6 +81,10 @@ joining log' connection player game = do
           , hear  = yield began >> hearing log' connection table
           , leave = void (connection.put (leaving game))
           , talks = True
+            -- Asking for them by name again is a rematch, which is
+            -- what the website offers at the end of a game, and which
+            -- they are free to turn down.
+          , again = Just theirs
           }
 
 -- | How long to wait for the server to say where a game stands.

@@ -101,6 +101,9 @@ open program setup = do
             , leave = Gtp.stop gtp >> atomically seal
               -- It takes what is said to it and says nothing back.
             , talks = False
+              -- And it is nobody in particular. The next one started
+              -- is the same one.
+            , again = Nothing
             }
       setUp <- newGame gtp current setup.size
       case setUp of

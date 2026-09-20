@@ -46,6 +46,7 @@ silent = Opponent { name  = "nobody"
                   , hear  = pure ()
                   , leave = pure ()
                   , talks = True
+                  , again = Just "nobody"
                   }
 
 source :: Opponents

@@ -278,12 +278,12 @@ update' state = \case
 -- machine, or another game on the server, which is what a rematch is.
 again :: State -> TabId -> Session -> Transition State Event
 again state tab session = Transition
-  (replacing state tab (Playing (starting session.setup)))
+  (replacing state tab (Playing (starting wanted)))
   (  release state.opponents (Playing session)
-  <> keyed
-       (findingIn tab)
-       (perform (Just . TabOpened tab <$> state.opponents.open session.setup))
+  <> keyed (findingIn tab)
+           (perform (Just . TabOpened tab <$> state.opponents.open wanted))
   )
+  where wanted = playingAgain session
 
 -- | Something said about a game the player is not looking at goes
 -- where they will see it.

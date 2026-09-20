@@ -49,6 +49,7 @@ silent = Opponent { name  = "nobody"
                   , hear  = pure ()
                   , leave = pure ()
                   , talks = True
+                  , again = Just "nobody"
                   }
 
 -- | One that will not be told anything, and says why.
@@ -314,6 +315,25 @@ prop_aProgramCanBeStartedOverAndSomebodyElseCannot =
     -- opponent never arrived has nothing to leave.
     canPlayAgain (starting (board Black 9)) === False
     canPlayAgain (couldNotOpen "gone" (starting (board Black 9))) === True
+
+prop_playingAgainAsksForTheSamePlayerWhenThereIsOneToAskFor :: Property
+prop_playingAgainAsksForTheSamePlayerWhenThereIsOneToAskFor =
+  withTests 1 . property $ do
+    -- On a server the next game is against the same player rather than
+    -- a fresh stranger, which is what the website offers at the end of
+    -- a game. They are free to turn it down.
+    playingAgain game === game.setup { versus = "nobody" }
+    -- Even when the game was got by being paired with somebody nobody
+    -- had heard of, which is when it matters most: there was no name
+    -- to start with, and now there is one.
+    (starting (board Black 9)).setup.versus === ""
+    -- A program on this machine is nobody in particular. The next one
+    -- started is the same one.
+    playingAgain (gameWith silent { talks = False, again = Nothing })
+      === board Black 9
+    -- And a game whose opponent is gone has nobody to ask.
+    playingAgain (couldNotOpen "gone" (starting (board Black 9)))
+      === board Black 9
 
 prop_thereIsOnlySomebodyToTalkToWhenThereIsSomebodyThere :: Property
 prop_thereIsOnlySomebodyToTalkToWhenThereIsSomebodyThere =

@@ -71,6 +71,7 @@ passing = do
     , hear  = fromInput input
     , leave = atomically seal
     , talks = False
+    , again = Nothing
     }
 
 source :: Opponents
