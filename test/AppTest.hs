@@ -64,6 +64,8 @@ source :: Opponents
 source = Opponents { open  = \_ -> pure (Right silent)
                    , close = \_ -> pure ()
                    , take' = \_ -> pure (Right silent)
+                   , ongoing = pure (Right [])
+                   , resume = \_ -> pure (Right silent)
                    , enter = pure (Right "nobody")
                    }
 
@@ -79,6 +81,8 @@ countingSource = do
     ( Opponents { open  = \_ -> Right silent <$ handedOut
                 , close = \_ -> handedBack
                 , take' = \_ -> Right silent <$ handedOut
+                , ongoing = pure (Right [])
+                , resume = \_ -> Right silent <$ handedOut
                 , enter = pure (Right "nobody")
                 }
     , counts
@@ -415,6 +419,77 @@ prop_startingOverDoesNothingToAGameSomebodyIsWaitingOn =
     null (jobsOf (commandOf (update' (next empty' NewTabPressed) (AgainPressed 1))))
       === True
 
+-- * Games already going
+-------------------------
+
+-- | A game this player is already in.
+already' :: Ongoing
+already' = Ongoing { with  = "lenzuru"
+                   , about = asking { against = Online, versus = "lenzuru" }
+                   , game  = 90884965
+                   }
+
+prop_signingInAsksWhichGamesAreAlreadyGoing :: Property
+prop_signingInAsksWhichGamesAreAlreadyGoing = property $ do
+  -- Signed in, and now there is somebody to have games. What they are
+  -- already in is worth knowing before they are asked what to start.
+  asked <- evalIO (newIORef (0 :: Int))
+  let noting = source { ongoing = Right [already'] <$ modifyIORef' asked (+ 1) }
+      window = startingState noting asking
+  events <- ran window (SignedInAs (Right "enzuru"))
+  times  <- evalIO (readIORef asked)
+  times === 1
+  case events of
+    [GamesFound found] -> found === Right [already']
+    _                  -> annotate "it asked for something else" >> failure
+
+prop_gamesThatCouldNotBeAskedForLeaveTheListAlone :: Property
+prop_gamesThatCouldNotBeAskedForLeaveTheListAlone =
+  withTests 1 . property $ do
+    -- A list of what is true somewhere else. Not being able to see it
+    -- is not the same as there being nothing in it.
+    let held = next oneGame (GamesFound (Right [already']))
+    map (.game) held.already === [90884965]
+    map (.game) (next held (GamesFound (Left "no"))).already === [90884965]
+
+prop_openingAGameAlreadyGoingPutsItInATabOfItsOwn :: Property
+prop_openingAGameAlreadyGoingPutsItInATabOfItsOwn =
+  withTests 1 . property $ do
+    let held   = next oneGame (GamesFound (Right [already']))
+        opened = next held (InSetup 1 (ResumePressed already'))
+    -- A tab of its own, and the one that was showing is untouched.
+    map fst opened.openTabs === [1, 2]
+    opened.showing === Just 2
+    fmap (.setup) (gameIn 2 opened) === Just already'.about
+    -- Off the list as it opens, so the page stops offering a game that
+    -- now has a tab.
+    opened.already === []
+    -- Under the new tab's name, so closing that tab stops it.
+    namesOf held (InSetup 1 (ResumePressed already')) === [Just "finding game-2"]
+
+prop_openingOneGoesToWhereverGamesAreRejoined :: Property
+prop_openingOneGoesToWhereverGamesAreRejoined = property $ do
+  -- Going back into a game is not asking for one, and it is not
+  -- taking one that was offered either.
+  counts <- evalIO (newIORef (0 :: Int, 0 :: Int))
+  let noting = source
+        { open   = \_ -> Right silent <$ modifyIORef' counts (\(o, r) -> (o + 1, r))
+        , resume = \_ -> Right silent <$ modifyIORef' counts (\(o, r) -> (o, r + 1))
+        }
+      window = next (startingState noting asking) NewTabPressed
+  _     <- ran window (InSetup 1 (ResumePressed already'))
+  seen  <- evalIO (readIORef counts)
+  seen === (0, 1)
+
+prop_lookingAgainAsksAgain :: Property
+prop_lookingAgainAsksAgain = property $ do
+  asked <- evalIO (newIORef (0 :: Int))
+  let noting = source { ongoing = Right [] <$ modifyIORef' asked (+ 1) }
+      window = next (startingState noting asking) NewTabPressed
+  _     <- ran window (InSetup 1 RefreshPressed)
+  times <- evalIO (readIORef asked)
+  times === 1
+
 -- * A game somebody offered
 -----------------------------
 
@@ -678,6 +753,8 @@ prop_aSourceMadeOfTwoPicksByWhereTheGameIsPlayed = property $ do
         { open  = \_ -> Right silent <$ modifyIORef' asked' (<> [what])
         , close = \_ -> pure ()
         , take' = \_ -> pure (Right silent)
+        , ongoing = pure (Right [])
+        , resume = \_ -> pure (Right silent)
         , enter = pure (Right what)
         }
       both = choosing (noting "computer") (noting "online")

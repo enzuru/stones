@@ -28,6 +28,7 @@ module Stones.Opponent
   , Heard(..)
   , Opening(..)
   , Invitation(..)
+  , Ongoing(..)
   , Clock(..)
   , Time(..)
   , ticking
@@ -41,6 +42,7 @@ import           Pipes                          ( Producer )
 
 import           Go.Types
 import           Stones.Setup                   ( Against(..)
+                                                , Ongoing(..)
                                                 , Setup(..)
                                                 )
 
@@ -80,6 +82,12 @@ data Opponents = Opponents
     -- ^ Let one go, when the game it was playing has closed.
   , take' :: Invitation -> IO (Either Text Opponent)
     -- ^ Take a game somebody else offered, rather than asking for one.
+  , ongoing :: IO (Either Text [Ongoing])
+    -- ^ The games this player is already in, wherever they were
+    -- started. A place with no account has nobody to be in any.
+  , resume :: Ongoing -> IO (Either Text Opponent)
+    -- ^ Open one of those, which is joining a game rather than
+    -- starting or accepting one.
   , enter :: IO (Either Text Text)
     -- ^ Sign in wherever the games are, answering with what to call
     -- the player. Only one of the two places asks for it, and the
@@ -98,9 +106,12 @@ choosing computer online = Opponents
               Computer -> computer.open setup
               Online   -> online.open setup
   , close = (.leave)
-    -- Only one of the two places has anybody in it to offer a game.
-  , take' = online.take'
-  , enter = online.enter
+    -- Only one of the two places has anybody in it to offer a game,
+    -- or any games to already be in.
+  , take'   = online.take'
+  , ongoing = online.ongoing
+  , resume  = online.resume
+  , enter   = online.enter
   }
 
 -- | A game somebody has offered to play.

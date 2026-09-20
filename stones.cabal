@@ -46,6 +46,7 @@ library
                     , Stones.Ogs.Frame
                     , Stones.Ogs.Login
                     , Stones.Ogs.Protocol
+                    , Stones.Ogs.Games
                     , Stones.Ogs.Seek
                     , Stones.Ogs.Socket
                     , Stones.Opponent
@@ -124,6 +125,7 @@ test-suite stones-tests
                     , BoardTest
                     , ChallengeTest
                     , ClockTest
+                    , GamesTest
                     , LogTest
                     , OnlineTest
                     , DrawTest

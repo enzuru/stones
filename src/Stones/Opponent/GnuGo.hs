@@ -270,6 +270,9 @@ withGnuGo program use = bracket (newIORef []) stopEveryone $ \running ->
                   -- this machine, and says so if it ever does.
                 , take' = \_ ->
                   pure (Left "Nobody on this computer offers a game.")
+                , ongoing = pure (Right [])
+                , resume = \_ ->
+                  pure (Left "There are no games to go back to here.")
                 , enter = pure (Left "Games on this computer need no account.")
                 }
  where

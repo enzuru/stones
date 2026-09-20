@@ -27,6 +27,7 @@ module Stones.Setup
   , speeds
   , describeSpeed
   , speedName
+  , Ongoing(..)
   , Signing(..)
   , describeSigning
   , signedIn
@@ -61,7 +62,9 @@ import qualified GI.Gtk                        as Gtk
 import           GI.Gtk.Declarative
 import           GI.Gtk.Declarative.Adwaita.Bin ( )
 import           GI.Gtk.Declarative.Adwaita.Rows
-                                                ( rowSuffix )
+                                                ( headerSuffix
+                                                , rowSuffix
+                                                )
 import           GI.Gtk.Declarative.Adwaita.ToggleGroup
                                                 ( ToggleGroupParams(..)
                                                 , defaultToggleGroupParams
@@ -174,6 +177,22 @@ speedName = \case
   Live           -> "live"
   Correspondence -> "correspondence"
 
+-- | A game this player is already in, that this window has no tab for.
+--
+-- Started on the website, or in a tab that was closed, or days ago and
+-- waiting for a move ever since. Nothing has to be agreed to open one:
+-- it is already going, and this is only a way back into it.
+data Ongoing = Ongoing
+  { with  :: Text
+    -- ^ Who it is against.
+  , about :: Setup
+    -- ^ What it is, as far as it can be said in the terms the rest of
+    -- this program uses.
+  , game  :: Int
+    -- ^ The number the server knows it by.
+  }
+  deriving (Eq, Show)
+
 -- | How far the player has got with signing in.
 --
 -- Only one place asks for it, and the page only shows this when that
@@ -285,6 +304,11 @@ data SetupEvent
   | ChoseSpeed Speed
   | ChoseRanked Bool
   | ChoseHandicapping Handicapping
+  | ResumePressed Ongoing
+    -- ^ Open a game this player is already in. Like signing in, this
+    -- is about the window rather than about one tab.
+  | RefreshPressed
+    -- ^ Ask again which games this player is already in.
   | ChoseVersus Text
   | StartPressed
   | SignInPressed
@@ -305,6 +329,8 @@ chose setup = \case
   ChoseSpeed how      -> setup { speed = how }
   ChoseRanked counts  -> setup { ranked = counts }
   ChoseHandicapping h -> setup { handicapping = h }
+  ResumePressed _     -> setup
+  RefreshPressed      -> setup
   ChoseVersus who     -> setup { versus = who }
   StartPressed        -> setup
   SignInPressed       -> setup
@@ -347,8 +373,8 @@ colorWord White = "White"
 -- player sees it from inside the program. Under it is a settings page
 -- of the ordinary kind: a preferences group, a row per thing to
 -- choose, and a toggle group in each row.
-launchPage :: Signing -> Setup -> Widget SetupEvent
-launchPage signing setup = bin
+launchPage :: Signing -> [Ongoing] -> Setup -> Widget SetupEvent
+launchPage signing already setup = bin
   Adw.StatusPage
   [ #iconName := "com.github.enzuru.Stones"
   , #title := "Stones"
@@ -362,21 +388,61 @@ launchPage signing setup = bin
     (container
       Gtk.Box
       [#orientation := Gtk.OrientationVertical, #spacing := 24]
-      [ BoxChild defaultBoxChildProperties
-        $ container Adw.PreferencesGroup [] (Vector.fromList rows)
-      , BoxChild defaultBoxChildProperties $ widget
-        Gtk.Button
-        [ #label := button
-        , #halign := Gtk.AlignCenter
-        , #sensitive := ready
-        , classes ["suggested-action", "pill"]
-        , on #clicked StartPressed
-        ]
-      ]
+      (  [ BoxChild defaultBoxChildProperties
+           $ container Adw.PreferencesGroup [] (Vector.fromList rows)
+         ]
+      <> going
+      <> [ BoxChild defaultBoxChildProperties $ widget
+             Gtk.Button
+             [ #label := button
+             , #halign := Gtk.AlignCenter
+             , #sensitive := ready
+             , classes ["suggested-action", "pill"]
+             , on #clicked StartPressed
+             ]
+         ]
+      )
     )
   )
  where
   boardLabel n = let w = Text.pack (show n) in w <> "\215" <> w
+  -- The games this player is already in, when there are any and there
+  -- is somebody to be. Nothing has to be agreed to open one: it is
+  -- already going, and this is only a way back into it.
+  going
+    | setup.against == Online && signedIn signing && not (null already)
+    = [ BoxChild defaultBoxChildProperties $ container
+          Adw.PreferencesGroup
+          [ #title := "Your games"
+          , headerSuffix
+            (widget
+              Gtk.Button
+              [ #iconName := "view-refresh-symbolic"
+              , #tooltipText := "Look again"
+              , #valign := Gtk.AlignCenter
+              , classes ["flat"]
+              , on #clicked RefreshPressed
+              ]
+            )
+          ]
+          (Vector.fromList (map goingOn already))
+      ]
+    | otherwise
+    = []
+  -- One of them: who it is against, what it is, and a way in.
+  goingOn :: Ongoing -> Widget SetupEvent
+  goingOn one = container
+    Adw.ActionRow
+    [#title := one.with, #subtitle := describeSetup one.about]
+    [ rowSuffix
+        (widget
+          Gtk.Button
+          [ #label := "Open"
+          , #valign := Gtk.AlignCenter
+          , on #clicked (ResumePressed one)
+          ]
+        )
+    ]
   board = choice "Play on"
                  [ (Text.pack (show n), boardLabel n, n) | n <- boardWidths ]
                  setup.size

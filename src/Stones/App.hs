@@ -122,6 +122,10 @@ data State = State
     -- started, so a second game of the same kind is one click.
   , opponents :: Opponents
     -- ^ Where a game gets its opponent, once there is a game.
+  , already   :: [Ongoing]
+    -- ^ The games this player is already in that this window has no
+    -- tab for. Asked for once they are signed in, and again whenever
+    -- they ask.
   , offers    :: [Invitation]
     -- ^ Games somebody has offered and nobody has answered yet.
   , asides    :: [Aside]
@@ -177,6 +181,9 @@ data Event
     -- ^ Give up the game showing, which is what the menu means by it.
   | AgainPressed TabId
     -- ^ Start this tab's game over, with what it was started from.
+  | GamesFound (Either Text [Ongoing])
+    -- ^ The games this player is already in, or why they could not be
+    -- asked for.
   | OfferTaken Invitation
     -- ^ Take a game somebody offered, in a tab of its own.
   | AsideGone Text
@@ -203,6 +210,7 @@ startingState opponents opening = State { openTabs  = []
                                         , nextTab   = 1
                                         , opening   = opening
                                         , opponents = opponents
+                                        , already   = []
                                         , offers    = []
                                         , asides    = []
                                         , showChat  = False
@@ -218,15 +226,28 @@ update' state = \case
 
   NewTabPressed                -> openTab state
 
-  -- Signing in is about the window rather than about the tab the
-  -- button happens to be on, so it never reaches the page.
+  -- These are about the window rather than about the tab the button
+  -- happens to be on, so they never reach the page.
   InSetup _ SignInPressed      -> signIn state
+
+  InSetup _ RefreshPressed     -> Transition state (askingForGames state)
+
+  InSetup _ (ResumePressed it) -> goingBackTo state it
 
   InSetup tab event            -> inSetup state tab event
 
   ChatToggled out              -> Transition state { showChat = out } none
 
-  SignedInAs (Right name)      -> Transition state { signing = SignedIn name } none
+  -- Signed in, and now there is somebody to have games. What they are
+  -- already in is worth knowing before they are asked what to start.
+  SignedInAs (Right name)      -> Transition state { signing = SignedIn name }
+                                             (askingForGames state)
+
+  -- A list that could not be asked for is left as it was. It is a list
+  -- of what is true somewhere else, and not being able to see it is
+  -- not the same as there being nothing in it.
+  GamesFound (Right found)     -> Transition state { already = found } none
+  GamesFound (Left  _    )     -> Transition state none
   SignedInAs (Left  why )      ->
     Transition state { signing = SignInRefused why } none
 
@@ -281,6 +302,28 @@ update' state = \case
   ResignChosen                 -> case shownGame state of
     Just (tab, _) -> inGame state tab (`step` ResignPressed)
     Nothing       -> Transition state none
+
+-- | Ask which games this player is already in.
+askingForGames :: State -> Cmd Event
+askingForGames state =
+  keyed "games" (perform (Just . GamesFound <$> state.opponents.ongoing))
+
+-- | Open a game this player is already in, in a tab of its own.
+--
+-- It is taken off the list as it opens, so that the page stops
+-- offering a game that now has a tab. Closing that tab does not put it
+-- back, because looking again is a button.
+goingBackTo :: State -> Ongoing -> Transition State Event
+goingBackTo state it = Transition
+  state { openTabs = state.openTabs <> [(tab, Playing (starting it.about))]
+        , showing  = Just tab
+        , nextTab  = tab + 1
+        , already  = [ other | other <- state.already, other.game /= it.game ]
+        }
+  (keyed (findingIn tab)
+         (perform (Just . TabOpened tab <$> state.opponents.resume it))
+  )
+  where tab = state.nextTab
 
 -- | Take a game somebody offered, in a tab of its own.
 --
@@ -827,7 +870,7 @@ gameTabs state = tabView
   tabFor (tab, Choosing setup) = Tab
     { tabKey   = keyOf tab
     , tabTitle = "New Game"
-    , tabChild = InSetup tab <$> launchPage state.signing setup
+    , tabChild = InSetup tab <$> launchPage state.signing state.already setup
     }
 
 -- | What a tab holding a game is called.

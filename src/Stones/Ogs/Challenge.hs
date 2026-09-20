@@ -27,6 +27,7 @@ module Stones.Ogs.Challenge
   , challenging
   , accepting
   , findPlayer
+  , calling
   )
 where
 

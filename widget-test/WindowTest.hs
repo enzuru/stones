@@ -53,6 +53,8 @@ source :: Opponents
 source = Opponents { open  = \_ -> pure (Right silent)
                    , close = \_ -> pure ()
                    , take' = \_ -> pure (Right silent)
+                   , ongoing = pure (Right [])
+                   , resume = \_ -> pure (Right silent)
                    , enter = pure (Right "nobody")
                    }
 
@@ -247,6 +249,36 @@ prop_theOpponentRowShowsTheNameThePageHolds = withTests 1 . property $ do
     rows <- descendantsOf Adw.EntryRow widget'
     traverse Gtk.editableGetText rows
   blank === [""]
+
+prop_thePageListsTheGamesAlreadyGoing :: Property
+prop_thePageListsTheGamesAlreadyGoing = withTests 1 . property $ do
+  -- Only once there is somebody to have games, and only when there are
+  -- any: an empty group with a title and nothing under it is worse
+  -- than no group.
+  let one = Ongoing { with  = "lenzuru"
+                    , about = asking { against = Online, versus = "lenzuru" }
+                    , game  = 90884965
+                    }
+      signedIn' = next onlinePage (SignedInAs (Right "enzuru"))
+      listed    = next signedIn' (GamesFound (Right [one]))
+  before <- evalIO (rowTitlesOf signedIn')
+  after  <- evalIO (rowTitlesOf listed)
+  assert (notElem "lenzuru" before)
+  assert (elem "lenzuru" after)
+  -- And not before anybody has signed in, however many are listed.
+  out <- evalIO (rowTitlesOf (next onlinePage (GamesFound (Right [one]))))
+  assert (notElem "lenzuru" out)
+  -- Nor on the page that plays on this computer, which has no account
+  -- and no games anywhere else.
+  here <- evalIO
+    (rowTitlesOf (next listed (InSetup 1 (ChosePlace Computer))))
+  assert (notElem "lenzuru" here)
+
+-- | What the rows of a page are called.
+rowTitlesOf :: State -> IO [Text]
+rowTitlesOf state = built state $ \widget' -> do
+  rows <- descendantsOf Adw.ActionRow widget'
+  traverse Adw.preferencesRowGetTitle rows
 
 prop_thePageSaysWhetherAnybodyIsSignedIn :: Property
 prop_thePageSaysWhetherAnybodyIsSignedIn = withTests 1 . property $ do

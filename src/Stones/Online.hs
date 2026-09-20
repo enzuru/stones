@@ -50,6 +50,7 @@ import           Stones.Ogs.Account             ( Account(..) )
 import qualified Stones.Ogs.Account            as Account
 import           Stones.Ogs.Frame               ( Packet(..) )
 import qualified Stones.Ogs.Challenge          as Challenge
+import qualified Stones.Ogs.Games              as Games
 import qualified Stones.Ogs.Login              as Login
 import           Stones.Ogs.Seek                ( Seek(..) )
 import qualified Stones.Ogs.Seek               as Seek
@@ -133,7 +134,9 @@ withOnlineWith log' outside use = do
   use
       Opponents { open  = finding log' outside who held
                 , close = (.leave)
-                , take' = taking log' outside who held
+                , take'   = taking log' outside who held
+                , ongoing = listing log' who
+                , resume  = resuming log' outside who held
                 , enter = entering log' outside who
                 }
     `finally` (readIORef held >>= \open' -> for_ open' (.stop))
@@ -186,6 +189,36 @@ finding log' outside who held setup = readIORef who >>= \case
         Left  why -> Left why <$ log'.note ("no game: " <> why)
         Right it  -> pure (Right it)
 
+-- | The games this player is already in.
+--
+-- Asked for rather than waited for: the answer is a list of what is
+-- true now, and nothing pushes it.
+listing :: Log -> IORef (Maybe Signed) -> IO (Either Text [Ongoing])
+listing log' who = readIORef who >>= \case
+  Nothing     -> pure (Right [])
+  Just signed -> Games.myGames signed.token signed.account.player >>= \case
+    Left why -> Left why <$ log'.note ("could not list the games: " <> why)
+    Right found -> do
+      log'.note ("already in " <> Text.pack (show (length found)) <> " games")
+      pure (Right found)
+
+-- | Go back into one of them.
+--
+-- Nothing has to be agreed. It is already going, so this is a
+-- connection and a joining and nothing else.
+resuming
+  :: Log
+  -> Reaching
+  -> IORef (Maybe Signed)
+  -> IORef [Socket]
+  -> Ongoing
+  -> IO (Either Text Opponent)
+resuming log' outside who held already = readIORef who >>= \case
+  Nothing     -> pure (Left "Sign in to online-go.com first.")
+  Just signed -> do
+    log'.note ("going back into game " <> Text.pack (show already.game))
+    opening log' outside held signed already.game
+
 -- | Take a game somebody offered.
 --
 -- Saying yes is a call to the website, like asking for one. What comes
@@ -209,15 +242,25 @@ taking log' outside who held offer = readIORef who >>= \case
         <> " offered by "
         <> offer.from
         )
-      outside.dial >>= \case
-        Left why -> Left why <$ log'.note ("could not connect: " <> why)
-        Right dialled -> do
-          let connection = watching log' dialled
-          modifyIORef' held (connection :)
-          Account.signingIn connection signed.account >>= \case
-            Left why -> Left why <$ connection.stop
-            Right () ->
-              Ogs.joining log' connection signed.account.player offer.game
+      opening log' outside held signed offer.game
+
+-- | A connection of this game's own, signed in, and the game joined on
+-- it.
+opening
+  :: Log
+  -> Reaching
+  -> IORef [Socket]
+  -> Signed
+  -> Int
+  -> IO (Either Text Opponent)
+opening log' outside held signed game = outside.dial >>= \case
+  Left why -> Left why <$ log'.note ("could not connect: " <> why)
+  Right dialled -> do
+    let connection = watching log' dialled
+    modifyIORef' held (connection :)
+    Account.signingIn connection signed.account >>= \case
+      Left why -> Left why <$ connection.stop
+      Right () -> Ogs.joining log' connection signed.account.player game
 
 -- | A game against whoever else is looking for the same one.
 looking :: Log -> Signed -> Socket -> Setup -> IO (Either Text Opponent)
