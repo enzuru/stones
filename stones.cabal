@@ -47,6 +47,7 @@ library
                     , Stones.Ogs.Socket
                     , Stones.Opponent
                     , Stones.Opponent.GnuGo
+                    , Stones.Opponent.Ogs
                     , Stones.Opponent.Gtp
                     , Stones.Files
                     , Stones.Goban
@@ -120,6 +121,7 @@ test-suite stones-tests
                     , GameTest
                     , GeometryTest
                     , GtpTest
+                    , OgsOpponentTest
                     , ProtocolMessageTest
                     , ProtocolTest
                     , SessionTest
@@ -136,6 +138,8 @@ test-suite stones-tests
                     , async
                     , http-client
                     , network
+                    , pipes-concurrency
+                    , stm
                     , websockets
                     , gi-gtk4-declarative-app-simple
                     , hedgehog                        >=1    && <2
