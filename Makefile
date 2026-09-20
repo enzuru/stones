@@ -32,7 +32,11 @@ INCLUDES := $(addprefix -i,$(SRC) $(GTKD))
 
 # The cabal file says Haskell2010, so the direct GHC calls say it too,
 # rather than building against the newer default and finding out later.
-WARNINGS := -Wall -XHaskell2010
+# A record built without all of its fields is a warning by default and
+# an exception when the field is read, which is a long way from where
+# the field was left out. A field added to a record is exactly when
+# that happens, so it is an error here.
+WARNINGS := -Wall -Werror=missing-fields -XHaskell2010
 
 # Two packages in the dev shell hold a module called GI.Gtk: gi-gtk,
 # which is the one the cabal file names, and gi-gtk4, a copy of it under

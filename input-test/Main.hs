@@ -75,6 +75,7 @@ passing = do
 source :: Opponents
 source = Opponents { open  = \_ -> Right <$> passing
                    , close = \_ -> pure ()
+                   , enter = pure (Left "there is nothing to sign in to here")
                    }
 
 -- | The player's stones on the board of the first tab, by name.
@@ -102,7 +103,8 @@ main = do
   -- rather than gtk_init: the style manager the board reads is one of
   -- the things it puts in place.
   Adw.init
-  let window = application source Setup { size     = 9
+  let window = application source Setup { against  = Computer
+                                        , size     = 9
                                         , human    = Black
                                         , strength = Gentle
                                         , handicap = 0
