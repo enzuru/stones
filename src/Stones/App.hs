@@ -738,7 +738,10 @@ gameTabs state = tabView
  where
   tabFor (tab, Playing session) = Tab
     { tabKey   = keyOf tab
-    , tabTitle = "Game " <> Text.pack (show tab)
+      -- Who the game is against, which is the one thing that tells two
+      -- tabs apart at a glance. A number never did: the tabs are in a
+      -- row and already look like one, two, three.
+    , tabTitle = titleOf session
     , tabChild = board state tab session
     }
   tabFor (tab, Choosing setup) = Tab
@@ -746,6 +749,16 @@ gameTabs state = tabView
     , tabTitle = "New Game"
     , tabChild = InSetup tab <$> launchPage state.signing setup
     }
+
+-- | What a tab holding a game is called.
+--
+-- A game that has not found anybody yet has nobody to be named after,
+-- and one whose opponent never arrived is named after what went wrong
+-- somewhere else, not here.
+titleOf :: Session -> Text
+titleOf session = case session.standing of
+  Here it -> it.name
+  _       -> "Game"
 
 -- | One game's board, with a little room around it so that the wood
 -- does not touch the edge of the window.

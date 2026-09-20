@@ -24,6 +24,7 @@ module Stones.Ogs.Protocol
   , resultFrom
   , moverOf
   , openingFrom
+  , opponentIn
   , clockFrom
   , timeFrom
   , outgoing
@@ -284,6 +285,20 @@ clockFrom body = do
         else if sideOf "white_player_id" == Just player
           then Just White
           else Nothing
+
+-- | What to call the other player, out of what the server says about
+-- a game when it is joined.
+--
+-- Only the server knows. A game this program asked for was asked for
+-- by name, but a game it was paired into was paired with somebody
+-- nobody here has heard of, and either way the name belongs on the
+-- tab rather than the word "online-go.com".
+opponentIn :: Int -> Value -> Maybe Text
+opponentIn player body = do
+  black <- fieldOf "black_player_id" body >>= asWhole
+  both  <- fieldOf "players" body
+  let theirs = if player == black then "white" else "black"
+  fieldOf theirs both >>= fieldOf "username" >>= asString
 
 -- | How far along a game is, out of what the server says about it.
 countFrom :: Value -> Maybe Int

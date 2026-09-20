@@ -156,6 +156,32 @@ bodyOf = \case
 namesOf :: [Packet] -> [Text]
 namesOf packets = [ name | Event name _ _ <- packets ]
 
+prop_aGameIsNamedAfterWhoItIsAgainst :: Property
+prop_aGameIsNamedAfterWhoItIsAgainst = withTests 1 . property $ do
+  -- The name goes on the tab, which is the one thing that tells two
+  -- games apart at a glance.
+  let named = Event
+        "game/1234/gamedata"
+        [ object
+            [ "width" .= (9 :: Int)
+            , "initial_player" .= ("black" :: Text)
+            , "black_player_id" .= (77 :: Int)
+            , "white_player_id" .= (88 :: Int)
+            , "moves" .= ([] :: [Value])
+            , "players" .= object
+              [ "black" .= object ["username" .= ("lenzuru" :: Text)]
+              , "white" .= object ["username" .= ("amybot-beginner" :: Text)]
+              ]
+            ]
+        ]
+        Nothing
+  (_, them) <- evalIO (joinedWith named)
+  them.name === "amybot-beginner"
+  -- A game that says nothing about who is in it falls back to where it
+  -- is being played, which is better than an empty tab.
+  (_, nameless) <- evalIO joined
+  nameless.name === "online-go.com"
+
 prop_joiningSaysSoOnTheConnection :: Property
 prop_joiningSaysSoOnTheConnection = withTests 1 . property $ do
   (it, _) <- evalIO joined

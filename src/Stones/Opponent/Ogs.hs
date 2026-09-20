@@ -72,9 +72,9 @@ joining log' connection player game = do
       -- that might not even exist.
       opened <- beginning log' connection table game
       pure $ case opened of
-        Left  why   -> Left why
-        Right began -> Right Opponent
-          { name  = "online-go.com"
+        Left  why            -> Left why
+        Right (began, theirs) -> Right Opponent
+          { name  = theirs
           , tell  = telling connection table
             -- Where it stands was read off the stream to get here, so
             -- it is put back at the front of what the game hears.
@@ -102,7 +102,8 @@ patience = 120 * 1000000
 -- What arrives before it and is not either of those is dropped. Only
 -- the server's own housekeeping comes that early, and the game has not
 -- started yet, so there is nothing yet for anything to be about.
-beginning :: Log -> Socket -> IORef Table -> Int -> IO (Either Text Heard)
+beginning
+  :: Log -> Socket -> IORef Table -> Int -> IO (Either Text (Heard, Text))
 beginning log' connection table game =
   Timeout.timeout patience (go connection.heard) >>= \case
     Nothing     -> pure (Left "online-go.com never said where the game stands.")
@@ -118,7 +119,14 @@ beginning log' connection table game =
           Just began@(Began _) -> do
             log'.note ("    " <> name <> " -> " <> Text.pack (show began))
             following table arguments began
-            pure (Right began)
+            -- Who it is against comes out of the same payload. A game
+            -- somebody was paired into is against somebody nobody here
+            -- has heard of until now.
+            let theirs = case arguments of
+                  body : _ -> maybe "online-go.com" id (opponentIn where'.me body)
+                  []       -> "online-go.com"
+            log'.note ("    playing " <> theirs)
+            pure (Right (began, theirs))
           Just (Lost why) -> pure (Left why)
           _               -> case refusalOf game name arguments of
             Just why -> Left why <$ log'.note ("refused: " <> why)

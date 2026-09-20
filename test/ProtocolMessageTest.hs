@@ -404,6 +404,26 @@ prop_aFinishedGameComesBackAsWhatItCameToAndNotAsANewOne =
     -- A game still being played is still a game starting.
     resultFrom (object ["phase" .= ("play" :: Text)]) === Nothing
 
+prop_whoTheGameIsAgainstComesFromTheServer :: Property
+prop_whoTheGameIsAgainstComesFromTheServer = withTests 1 . property $ do
+  -- Word for word what online-go.com said about a game against a bot.
+  -- Only the server knows: a game somebody was paired into is against
+  -- somebody nobody here has heard of.
+  let both = object
+        [ "black_player_id" .= (77 :: Int)
+        , "white_player_id" .= (605979 :: Int)
+        , "players" .= object
+          [ "black" .= object ["id" .= (77 :: Int), "username" .= ("lenzuru" :: Text)]
+          , "white" .= object
+            ["id" .= (605979 :: Int), "username" .= ("amybot-beginner" :: Text)]
+          ]
+        ]
+  opponentIn 77 both === Just "amybot-beginner"
+  -- And from the other side of the same board.
+  opponentIn 605979 both === Just "lenzuru"
+  -- A game that says nothing about who is in it has nobody to name.
+  opponentIn 77 (object []) === Nothing
+
 -- * The clock
 ---------------
 
