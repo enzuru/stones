@@ -105,6 +105,7 @@ main = do
   let window = application source Setup { size     = 9
                                         , human    = Black
                                         , strength = Gentle
+                                        , handicap = 0
                                         }
   void (run window { update = reporting
                    , inputs = inputs window <> [past, quitWhenTold]

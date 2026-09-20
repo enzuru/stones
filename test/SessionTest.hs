@@ -364,5 +364,36 @@ prop_aGameAlreadyUnderWayIsTakenAsItIs = withTests 1 . property $ do
   stoneAt begun.game.board (Coord 3 3) === Nothing
   begun.game.turn === Black
 
+prop_aGameThatStartsOnTheirMoveAsksThem :: Property
+prop_aGameThatStartsOnTheirMoveAsksThem = withTests 1 . property $ do
+  -- A handicap is Black's stones down and White to play. The player
+  -- has Black, so the first move is the other side's, and nothing else
+  -- would ever ask for it.
+  said <- saying
+    (opening Black)
+    [ Arrived
+        (Began Opening { width  = 9
+                       , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
+                       , opens  = White
+                       , yours  = Black
+                       }
+        )
+    ]
+  said === [Asked]
+
+prop_aGameThatStartsOnOurMoveAsksNobody :: Property
+prop_aGameThatStartsOnOurMoveAsksNobody = withTests 1 . property $ do
+  said <- saying
+    (opening Black)
+    [ Arrived
+        (Began Opening { width  = 9
+                       , stones = []
+                       , opens  = Black
+                       , yours  = Black
+                       }
+        )
+    ]
+  said === []
+
 tests :: Group
 tests = $$(discover)

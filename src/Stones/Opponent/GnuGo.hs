@@ -101,12 +101,49 @@ open program setup = do
             , leave = Gtp.stop gtp >> atomically seal
             }
       setUp <- newGame gtp current setup.size
-      pure $ case setUp of
-        Left  failure -> Left failure
-        Right ()      -> Right opponent
+      case setUp of
+        Left  failure -> pure (Left failure)
+        Right ()      -> do
+          placed <- placing gtp current output setup
+          pure $ case placed of
+            Left  failure -> Left failure
+            Right ()      -> Right opponent
  where
   Level level = levelFor setup.strength
   arguments   = ["--mode", "gtp", "--level", show level]
+
+-- | Put the handicap down, if the game has one.
+--
+-- GNU Go places the stones and says where it put them, and the game
+-- above is told the same way a game on a server would be: the position
+-- arrives before anything else does. Black has the stones, so White is
+-- the one to move.
+placing
+  :: Gtp.Gtp -> IORef Int -> Output Heard -> Setup -> IO (Either Text ())
+placing gtp current output setup
+  | setup.handicap < 2 = pure (Right ())
+  | otherwise = do
+    n      <- readIORef current
+    answer <- report
+      (Gtp.command
+        gtp
+        ("fixed_handicap " <> Text.pack (show setup.handicap))
+      )
+    case answer of
+      Left  failure -> pure (Left failure)
+      Right text    -> case traverse (fromVertex n) (Text.words text) of
+        Nothing ->
+          pure (Left ("The engine answered with \"" <> text <> "\"."))
+        Just stones -> do
+          _ <- put
+            output
+            (Began Opening { width  = n
+                           , stones = [ (Black, stone) | stone <- stones ]
+                           , opens  = White
+                           , yours  = setup.human
+                           }
+            )
+          pure (Right ())
 
 -- | Say one thing to GNU Go.
 --

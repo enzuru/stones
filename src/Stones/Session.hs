@@ -291,11 +291,18 @@ arrived session = \case
 -- arrives before any move does, and a game that has already started
 -- takes it again rather than arguing.
 began :: Session -> Opening -> Step
-began session opening = stay session
-  { game  = gameFrom opening.width opening.stones opening.opens
-  , human = opening.yours
-  , note  = Nothing
-  }
+began session opening
+  | started.turn == opening.yours = stay settled
+  | otherwise = case listening session of
+    -- The game starts on the other side's move, which is what a
+    -- handicap is: Black's stones are down and White has yet to play.
+    -- Somebody has to say so, because nothing else will.
+    Just them -> telling settled them [Asked]
+    Nothing   -> stay settled
+ where
+  started = gameFrom opening.width opening.stones opening.opens
+  settled =
+    session { game = started, human = opening.yours, note = Nothing }
 
 -- | A move arrived. It is played here if it is the move this board is
 -- waiting for, and dropped if it is not.

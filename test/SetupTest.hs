@@ -45,7 +45,7 @@ prop_aChoiceChangesTheOneThingItIsAbout :: Property
 prop_aChoiceChangesTheOneThingItIsAbout = withTests 1 . property $ do
   chose defaultSetup (ChoseBoard 9) === defaultSetup { size = 9 }
   chose defaultSetup (ChoseSide White)
-    === Setup { size = 19, human = White, strength = Fierce }
+    === Setup { size = 19, human = White, strength = Fierce, handicap = 0 }
   chose defaultSetup (ChoseStrength Gentle) === defaultSetup { strength = Gentle }
 
 prop_startingIsNotAChoice :: Property
@@ -68,13 +68,36 @@ prop_everyChoiceSticks = property $ do
 prop_thePageSaysWhatItIsAskingFor :: Property
 prop_thePageSaysWhatItIsAskingFor = withTests 1 . property $ do
   describeSetup defaultSetup === "19\215\&19  \183  Black  \183  Fierce"
-  describeSetup Setup { size = 9, human = White, strength = Gentle }
+  describeSetup
+      Setup { size = 9, human = White, strength = Gentle, handicap = 0 }
     === "9\215\&9  \183  White  \183  Gentle"
 
 prop_theStrengthsHaveNamesOfTheirOwn :: Property
 prop_theStrengthsHaveNamesOfTheirOwn = withTests 1 . property $ do
   map describeStrength strengths === ["Gentle", "Fair", "Fierce"]
   length strengths === 3
+
+prop_aHandicapIsNoneOrAtLeastTwo :: Property
+prop_aHandicapIsNoneOrAtLeastTwo = withTests 1 . property $ do
+  -- One stone is a move rather than a handicap, so it is not offered.
+  handicaps === [0, 2, 3, 4, 5]
+  assert (1 `notElem` handicaps)
+  describeHandicap 0 === "None"
+  describeHandicap 4 === "4"
+
+prop_choosingAHandicapSticks :: Property
+prop_choosingAHandicapSticks = withTests 1 . property $ do
+  (chose defaultSetup (ChoseHandicap 4)).handicap === 4
+  (chose defaultSetup (ChoseHandicap 0)).handicap === 0
+  -- And it changes nothing else.
+  (chose defaultSetup (ChoseHandicap 4)).size === defaultSetup.size
+  (chose defaultSetup (ChoseHandicap 4)).human === defaultSetup.human
+
+prop_aHandicapIsSaidOnlyWhenThereIsOne :: Property
+prop_aHandicapIsSaidOnlyWhenThereIsOne = withTests 1 . property $ do
+  describeSetup defaultSetup === "19\215\&19  \183  Black  \183  Fierce"
+  describeSetup defaultSetup { handicap = 4 }
+    === "19\215\&19  \183  Black  \183  Fierce  \183  4 stones"
 
 tests :: Group
 tests = $$(discover)

@@ -95,7 +95,7 @@ empty' = startingState source asking
 
 -- | What the page of a new tab asks for, in these tests.
 asking :: Setup
-asking = Setup { size = 9, human = Black, strength = Fierce }
+asking = Setup { size = 9, human = Black, strength = Fierce, handicap = 0 }
 
 -- | The tab that is open, taken through its page and started.
 --
@@ -297,7 +297,8 @@ prop_theTitleSaysWhoseTurnItIs = withTests 1 . property $ do
 
 prop_aTabOnItsPageSaysWhatItIsAskingFor :: Property
 prop_aTabOnItsPageSaysWhatItIsAskingFor = withTests 1 . property $ do
-  let wanted = Setup { size = 13, human = White, strength = Gentle }
+  let wanted =
+        Setup { size = 13, human = White, strength = Gentle, handicap = 0 }
   statusOf (Choosing wanted) === "New game"
   detailOf (Choosing wanted) === describeSetup wanted
   detailOf (Choosing wanted) === "13\215\&13  \183  White  \183  Gentle"
@@ -518,7 +519,11 @@ prop_theWindowIsWiredToItsOwnUpdateAndView = withTests 1 . property $ do
   -- Written out rather than updated, because `human` is a field of a
   -- game as well and a record update cannot be told which is meant.
   let playingWhite =
-        Setup { size = asking.size, human = White, strength = asking.strength }
+        Setup { size     = asking.size
+              , human    = White
+              , strength = asking.strength
+              , handicap = asking.handicap
+              }
       built = application source playingWhite
   (initialState built).opening.human === White
   case update built (initialState built) NewTabPressed of

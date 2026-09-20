@@ -87,6 +87,17 @@ options =
               <> showDefaultWith (Text.unpack . describeStrength)
               <> help ("How hard the engine tries: " <> names)
               )
+        <*> option
+              (stonesDown 0 9 "a handicap")
+              (  long "handicap"
+              <> metavar "N"
+              <> value defaultSetup.handicap
+              <> showDefault
+              <> help
+                   "Stones Black starts with down, 0 or 2 to 9. A small \
+                   \board takes fewer, and the engine says so if it will \
+                   \not place them."
+              )
         )
     <*> strOption
           (  long "engine"
@@ -109,6 +120,15 @@ strength = do
 -- | A word with nothing to tell apart but its letters.
 lower :: Text -> Text
 lower = Text.toLower
+
+-- | A handicap, which is none or at least two. One stone is not a
+-- handicap, it is a move.
+stonesDown :: Int -> Int -> String -> ReadM Int
+stonesDown low high what = do
+  given <- within low high what
+  if given == 1
+    then readerError "a handicap of one stone is a move, not a handicap"
+    else pure given
 
 -- | A number that has to be between two others, and what to say to
 -- somebody who gave one that is not.

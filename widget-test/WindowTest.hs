@@ -61,7 +61,7 @@ noGames = startingState source asking
 
 -- | What the page of a new tab asks for here.
 asking :: Setup
-asking = Setup { size = 9, human = Black, strength = Fierce }
+asking = Setup { size = 9, human = Black, strength = Fierce, handicap = 0 }
 
 -- | A window with one tab, still on the page that asks what to play.
 onePage :: State
@@ -177,19 +177,26 @@ prop_aTabOnItsPageShowsThePage = withTests 1 . property $ do
     pure (length pages, length areas, length rows, length groups, titles)
   pages === 1
   areas === 0
-  -- A row and a toggle group for each of the three things to choose.
-  rows === 3
-  groups === 3
+  -- A row and a toggle group for each thing there is to choose.
+  rows === length choices
+  groups === length choices
   titles === [("New game", describeSetup asking)]
 
 prop_thePageOffersEveryChoiceThereIs :: Property
 prop_thePageOffersEveryChoiceThereIs = withTests 1 . property $ do
-  -- Three boards, two colours and three strengths, as toggles rather
-  -- than as anything the page had to be told about twice.
+  -- Every board, colour, strength and handicap there is, as toggles
+  -- rather than as anything the page had to be told about twice. The
+  -- count comes from the lists themselves, so a choice added to one of
+  -- them is a choice this asks for.
   toggles <- evalIO . built onePage $ \widget' -> do
     groups <- descendantsOf Adw.ToggleGroup widget'
     traverse Adw.toggleGroupGetNToggles groups
-  toggles === [3, 2, 3]
+  toggles === map fromIntegral choices
+
+-- | How many there are of each thing the page asks about, in the order
+-- the page asks.
+choices :: [Int]
+choices = [length boardWidths, 2, length strengths, length handicaps]
 
 prop_startingAGameTurnsThePageIntoABoard :: Property
 prop_startingAGameTurnsThePageIntoABoard = withTests 1 . property $ do

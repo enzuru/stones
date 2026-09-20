@@ -23,6 +23,8 @@ module Stones.Setup
   , Strength(..)
   , strengths
   , describeStrength
+  , handicaps
+  , describeHandicap
   , SetupEvent(..)
   , defaultSetup
   , boardWidths
@@ -85,13 +87,29 @@ data Setup = Setup
     -- ^ The colour the player takes.
   , strength :: Strength
     -- ^ How hard the opponent is asked to try.
+  , handicap :: Int
+    -- ^ How many stones the player starts with down, or none.
   }
   deriving (Eq, Show)
+
+-- | The handicaps on offer.
+--
+-- Two is the smallest that means anything, and five is as many as the
+-- smallest board takes, so these are the ones that work whatever board
+-- is picked. The command line goes as far as the engine will.
+handicaps :: [Int]
+handicaps = [0, 2, 3, 4, 5]
+
+-- | What to call one in the window.
+describeHandicap :: Int -> Text
+describeHandicap 0 = "None"
+describeHandicap n = Text.pack (show n)
 
 -- | A 19x19 game as Black against an opponent trying hard, which is
 -- what a game of Go is when nobody says otherwise.
 defaultSetup :: Setup
-defaultSetup = Setup { size = 19, human = Black, strength = Fierce }
+defaultSetup =
+  Setup { size = 19, human = Black, strength = Fierce, handicap = 0 }
 
 -- | The boards on offer. Every board a player is likely to want, and
 -- no more: the rules work on any width, and nobody plays 14x14.
@@ -103,6 +121,7 @@ data SetupEvent
   = ChoseBoard Int
   | ChoseSide Color
   | ChoseStrength Strength
+  | ChoseHandicap Int
   | StartPressed
   deriving (Eq, Show)
 
@@ -113,6 +132,7 @@ chose setup = \case
   ChoseBoard n        -> setup { size = n }
   ChoseSide side      -> setup { human = side }
   ChoseStrength which -> setup { strength = which }
+  ChoseHandicap n     -> setup { handicap = n }
   StartPressed        -> setup
 
 -- | The line under the title while this page is up.
@@ -123,7 +143,11 @@ describeSetup setup =
     <> colorWord setup.human
     <> "  \183  "
     <> describeStrength setup.strength
-  where board = let n = Text.pack (show setup.size) in n <> "\215" <> n
+    <> stones
+ where
+  board = let n = Text.pack (show setup.size) in n <> "\215" <> n
+  stones | setup.handicap < 2 = ""
+         | otherwise = "  \183  " <> describeHandicap setup.handicap <> " stones"
 
 -- | The name of a colour, for a sentence.
 colorWord :: Color -> Text
@@ -173,6 +197,11 @@ launchPage setup = bin
           ]
           setup.strength
           ChoseStrength
+        , choice
+          "Handicap"
+          [ (describeHandicap n, describeHandicap n, n) | n <- handicaps ]
+          setup.handicap
+          ChoseHandicap
         ]
       , BoxChild defaultBoxChildProperties $ widget
         Gtk.Button

@@ -82,6 +82,25 @@ run = findExecutable "gnugo" >>= \found -> case found of
               then Left "it gave an empty score"
               else Right ()
             Right heard -> Left (Text.pack (show heard))
+        -- A handicap game, where the stones go down before anybody
+        -- moves and the position arrives the way a server's would.
+        check "a handicap" $ GnuGo.open program (board 19) { handicap = 4 }
+          >>= \started -> case started of
+                Left  why   -> pure (Left why)
+                Right other -> do
+                  heard <- Pipes.toListM (other.hear >-> Pipes.take 1)
+                  other.leave
+                  pure $ case heard of
+                    [Began opening]
+                      | length opening.stones /= 4
+                      -> Left "it put down the wrong number of stones"
+                      | opening.opens /= White
+                      -> Left "it left Black to move in a handicap game"
+                      | any ((/= Black) . fst) opening.stones
+                      -> Left "it gave the handicap to the wrong colour"
+                      | otherwise
+                      -> Right ()
+                    other' -> Left (Text.pack (show other'))
         -- Two opponents at once, which is what a window with two tabs
         -- in it has, each holding a board of its own.
         check "two engines at once" $ GnuGo.withGnuGo program
@@ -107,7 +126,8 @@ run = findExecutable "gnugo" >>= \found -> case found of
   -- A game on a board this wide, as Black, against an opponent that is
   -- trying. Black here means Asked asks White, which is what the
   -- checks above expect.
-  board n = Setup { size = n, human = Black, strength = Fierce }
+  board n =
+    Setup { size = n, human = Black, strength = Fierce, handicap = 0 }
 
   -- Say one thing, then read what came back off the stream. Only the
   -- things that answer are asked this way.
