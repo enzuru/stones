@@ -34,6 +34,7 @@ module Stones.Setup
   , Strength(..)
   , strengths
   , describeStrength
+  , strengthNumber
   , handicaps
   , describeHandicap
   , Handicapping(..)
@@ -72,26 +73,26 @@ import           Go.Types
 
 -- | How hard an opponent is asked to try.
 --
--- Three of them. A program that plays this well has ten steps to offer
--- and a menu of ten numbers is a menu nobody reads, so what the player
--- picks from is three words and what they mean is the program's
--- business.
-data Strength
-  = Gentle
-  | Fair
-  | Fierce
-  deriving (Eq, Ord, Show, Enum, Bounded)
+-- One to ten, which is the range GNU Go itself takes. It used to be
+-- three words, on the grounds that ten steps is more than anybody
+-- wants to read. Ten numbers say the same thing without pretending
+-- there are only three of them, and somebody who wants the one
+-- between fair and fierce can have it.
+newtype Strength = Strength Int
+  deriving (Eq, Ord, Show)
 
 -- | Every strength, easiest first, which is the order a menu shows
 -- them in.
 strengths :: [Strength]
-strengths = [minBound .. maxBound]
+strengths = map Strength [1 .. 10]
 
 -- | What to call one in the window.
 describeStrength :: Strength -> Text
-describeStrength Gentle = "Gentle"
-describeStrength Fair   = "Fair"
-describeStrength Fierce = "Fierce"
+describeStrength (Strength n) = Text.pack (show n)
+
+-- | The number in one, for whoever has to hand it to an engine.
+strengthNumber :: Strength -> Int
+strengthNumber (Strength n) = n
 
 -- | Where a game is played.
 --
@@ -257,7 +258,7 @@ defaultSetup :: Setup
 defaultSetup = Setup { against  = Computer
                      , size     = 19
                      , human    = Black
-                     , strength = Fierce
+                     , strength = Strength 10
                      , handicap = 0
                      , speed    = Live
                      , handicapping = Standard
@@ -325,7 +326,9 @@ describeSetup setup = Text.intercalate "  \183  " (board : rest)
          | setup.handicapping /= Standard
          ]
       <> [ versusOf setup | not (Text.null (versusOf setup)) ]
-    Computer -> [colorWord setup.human, describeStrength setup.strength] <> stones
+    Computer ->
+      [colorWord setup.human, "Level " <> describeStrength setup.strength]
+        <> stones
   stones | setup.handicap < 2 = []
          | otherwise = [describeHandicap setup.handicap <> " stones"]
 
@@ -353,7 +356,9 @@ launchPage signing setup = bin
   ]
   (bin
     Adw.Clamp
-    [#maximumSize := 400]
+    -- Wide enough for the ten levels an engine takes, which is the
+    -- longest row of choices on either page.
+    [#maximumSize := 520]
     (container
       Gtk.Box
       [#orientation := Gtk.OrientationVertical, #spacing := 24]
@@ -413,7 +418,7 @@ launchPage signing setup = bin
                [ (colorWord side, colorWord side, side) | side <- [Black, White] ]
                setup.human
                ChoseSide
-      , choice "Opponent"
+      , choice "Level"
                [ (describeStrength w, describeStrength w, w) | w <- strengths ]
                setup.strength
                ChoseStrength

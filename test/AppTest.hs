@@ -111,7 +111,7 @@ empty' = startingState source asking
 
 -- | What the page of a new tab asks for, in these tests.
 asking :: Setup
-asking = Setup { against = Computer, size = 9, human = Black, strength = Fierce, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
+asking = Setup { against = Computer, size = 9, human = Black, strength = Strength 10, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
 
 -- | The tab that is open, taken through its page and started.
 --
@@ -314,10 +314,10 @@ prop_theTitleSaysWhoseTurnItIs = withTests 1 . property $ do
 prop_aTabOnItsPageSaysWhatItIsAskingFor :: Property
 prop_aTabOnItsPageSaysWhatItIsAskingFor = withTests 1 . property $ do
   let wanted =
-        Setup { against = Computer, size = 13, human = White, strength = Gentle, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
+        Setup { against = Computer, size = 13, human = White, strength = Strength 1, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
   statusOf (Choosing wanted) === "New game"
   detailOf (Choosing wanted) === describeSetup wanted
-  detailOf (Choosing wanted) === "13\215\&13  \183  White  \183  Gentle"
+  detailOf (Choosing wanted) === "13\215\&13  \183  White  \183  Level 1"
   -- And a tab with a game in it says where the game stands.
   statusOf (Playing inPlay) === stateOf inPlay
   detailOf (Playing inPlay) === aboutGame inPlay

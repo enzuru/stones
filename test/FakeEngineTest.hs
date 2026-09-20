@@ -210,7 +210,7 @@ tests = $$(discover)
 -- | A game on a board this wide, as Black against an opponent that is
 -- trying.
 board :: Int -> Setup
-board n = Setup { against = Computer, size = n, human = Black, strength = Fierce, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
+board n = Setup { against = Computer, size = n, human = Black, strength = Strength 10, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
 
 -- | Say one thing to an opponent, then read what came back off its
 -- stream.

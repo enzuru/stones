@@ -40,7 +40,7 @@ prop_aGameStartsAsAGameOfGoDoes = withTests 1 . property $ do
   -- is trying, which is what somebody who says nothing has asked for.
   defaultSetup.size === 19
   defaultSetup.human === Black
-  defaultSetup.strength === Fierce
+  defaultSetup.strength === Strength 10
   assert (defaultSetup.size `elem` boardWidths)
 
 prop_theBoardsOnOfferAreTheOnesPeoplePlay :: Property
@@ -51,8 +51,8 @@ prop_aChoiceChangesTheOneThingItIsAbout :: Property
 prop_aChoiceChangesTheOneThingItIsAbout = withTests 1 . property $ do
   chose defaultSetup (ChoseBoard 9) === defaultSetup { size = 9 }
   chose defaultSetup (ChoseSide White)
-    === Setup { against = Computer, size = 19, human = White, strength = Fierce, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
-  chose defaultSetup (ChoseStrength Gentle) === defaultSetup { strength = Gentle }
+    === Setup { against = Computer, size = 19, human = White, strength = Strength 10, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
+  chose defaultSetup (ChoseStrength (Strength 1)) === defaultSetup { strength = Strength 1 }
   chose defaultSetup (ChosePlace Online) === defaultSetup { against = Online }
   chose defaultSetup (ChoseSpeed Blitz) === defaultSetup { speed = Blitz }
   chose defaultSetup (ChoseRanked True) === defaultSetup { ranked = True }
@@ -83,10 +83,10 @@ prop_everyChoiceSticks = property $ do
 
 prop_thePageSaysWhatItIsAskingFor :: Property
 prop_thePageSaysWhatItIsAskingFor = withTests 1 . property $ do
-  describeSetup defaultSetup === "19\215\&19  \183  Black  \183  Fierce"
+  describeSetup defaultSetup === "19\215\&19  \183  Black  \183  Level 10"
   describeSetup
-      Setup { against = Computer, size = 9, human = White, strength = Gentle, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
-    === "9\215\&9  \183  White  \183  Gentle"
+      Setup { against = Computer, size = 9, human = White, strength = Strength 1, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
+    === "9\215\&9  \183  White  \183  Level 1"
 
 prop_aPageAskingAboutAServerSaysNothingAboutAnEngine :: Property
 prop_aPageAskingAboutAServerSaysNothingAboutAnEngine =
@@ -96,7 +96,7 @@ prop_aPageAskingAboutAServerSaysNothingAboutAnEngine =
     -- something this program does not know yet.
     let online = defaultSetup { against = Online }
     describeSetup online === "19\215\&19  \183  online-go.com  \183  Live"
-    describeSetup online { size = 9, human = White, strength = Gentle }
+    describeSetup online { size = 9, human = White, strength = Strength 1 }
       === "9\215\&9  \183  online-go.com  \183  Live"
     -- What it does say is what that place was asked for.
     describeSetup online { speed = Blitz, ranked = True, versus = "amybot" }
@@ -160,8 +160,11 @@ prop_signingInSaysWhereItHasGotTo = withTests 1 . property $ do
 
 prop_theStrengthsHaveNamesOfTheirOwn :: Property
 prop_theStrengthsHaveNamesOfTheirOwn = withTests 1 . property $ do
-  map describeStrength strengths === ["Gentle", "Fair", "Fierce"]
-  length strengths === 3
+  map describeStrength strengths
+    === ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+  length strengths === 10
+  -- The range GNU Go itself takes, so nothing has to be translated.
+  map strengthNumber strengths === [1 .. 10]
 
 prop_aHandicapIsNoneOrAtLeastTwo :: Property
 prop_aHandicapIsNoneOrAtLeastTwo = withTests 1 . property $ do
@@ -181,9 +184,9 @@ prop_choosingAHandicapSticks = withTests 1 . property $ do
 
 prop_aHandicapIsSaidOnlyWhenThereIsOne :: Property
 prop_aHandicapIsSaidOnlyWhenThereIsOne = withTests 1 . property $ do
-  describeSetup defaultSetup === "19\215\&19  \183  Black  \183  Fierce"
+  describeSetup defaultSetup === "19\215\&19  \183  Black  \183  Level 10"
   describeSetup defaultSetup { handicap = 4 }
-    === "19\215\&19  \183  Black  \183  Fierce  \183  4 stones"
+    === "19\215\&19  \183  Black  \183  Level 10  \183  4 stones"
 
 tests :: Group
 tests = $$(discover)

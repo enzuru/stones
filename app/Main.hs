@@ -24,7 +24,6 @@ import qualified Data.List                     as List
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import qualified Data.Text.IO                  as Text
-import           Control.Applicative            ( optional )
 import           Options.Applicative
 import           System.Directory               ( doesDirectoryExist
                                                 , doesFileExist
@@ -43,13 +42,12 @@ import           Stones.Files                   ( dataFile )
 import qualified Stones.Menu                   as Menu
 import           Stones.Setup                   ( Handicapping
                                                 , Speed
-                                                , Strength
+                                                , Strength(..)
                                                 , describeHandicapping
                                                 , describeSpeed
                                                 , describeStrength
                                                 , handicappings
                                                 , speeds
-                                                , strengths
                                                 )
 import           Stones.Setup                   ( Against(..)
                                                 , Setup(..)
@@ -101,12 +99,12 @@ options =
             <|> pure defaultSetup.human
             )
         <*> option
-              strength
+              (Strength <$> within 1 10 "a level")
               (  long "strength"
-              <> metavar "NAME"
+              <> metavar "N"
               <> value defaultSetup.strength
               <> showDefaultWith (Text.unpack . describeStrength)
-              <> help ("How hard the engine tries: " <> names)
+              <> help "How hard the engine tries, from 1 to 10"
               )
         <*> option
               (stonesDown 0 9 "a handicap")
@@ -174,7 +172,6 @@ options =
             )
           )
   where
-  names = List.intercalate ", " (map (Text.unpack . describeStrength) strengths)
   paces = List.intercalate ", " (map (Text.unpack . describeSpeed) speeds)
   asked =
     List.intercalate ", " (map (Text.unpack . describeHandicapping) handicappings)
@@ -198,15 +195,6 @@ speedNamed = do
     how : _ -> pure how
     []      -> readerError ("there is no speed called " <> given)
   where matches how given = lower (describeSpeed how) == lower (Text.pack given)
-
--- | A strength by name, in any case, because a command line is typed.
-strength :: ReadM Strength
-strength = do
-  given <- str
-  case [ which | which <- strengths, matches which given ] of
-    which : _ -> pure which
-    []        -> readerError ("there is no strength called " <> given)
-  where matches which given = lower (describeStrength which) == lower (Text.pack given)
 
 -- | A word with nothing to tell apart but its letters.
 lower :: Text -> Text

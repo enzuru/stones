@@ -67,7 +67,7 @@ wanted :: Setup
 wanted = Setup { against  = Online
                , size     = 9
                , human    = Black
-               , strength = Fierce
+               , strength = Strength 10
                , handicap = 0
                , speed    = Live
                , ranked   = False

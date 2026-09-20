@@ -46,7 +46,8 @@ import           Go.Vertex
 import           Stones.Opponent
 import qualified Stones.Opponent.Gtp           as Gtp
 import           Stones.Setup                   ( Setup(..)
-                                                , Strength(..)
+                                                , Strength
+                                                , strengthNumber
                                                 )
 
 -- | How hard GNU Go thinks. Its own range is 1 to 10, and 10 is what
@@ -67,9 +68,8 @@ levelRange = (1, 10)
 -- Three of GNU Go's ten: the weakest, the middle, and the one it plays
 -- at when nothing is said.
 levelFor :: Strength -> Level
-levelFor Gentle = Level 1
-levelFor Fair   = Level 5
-levelFor Fierce = defaultLevel
+levelFor asked = Level (max low (min high (strengthNumber asked)))
+  where (low, high) = levelRange
 
 -- | Start GNU Go, and hand back an opponent that talks to it.
 --

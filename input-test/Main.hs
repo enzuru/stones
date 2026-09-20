@@ -108,7 +108,7 @@ main = do
   let window = application source Setup { against  = Computer
                                         , size     = 9
                                         , human    = Black
-                                        , strength = Gentle
+                                        , strength = Strength 1
                                         , handicap = 0
                                         , speed    = Live
                                         , ranked   = False

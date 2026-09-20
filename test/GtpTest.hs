@@ -130,7 +130,7 @@ run = findExecutable "gnugo" >>= \found -> case found of
   -- trying. Black here means Asked asks White, which is what the
   -- checks above expect.
   board n =
-    Setup { against = Computer, size = n, human = Black, strength = Fierce, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
+    Setup { against = Computer, size = n, human = Black, strength = Strength 10, handicap = 0, speed = Live, ranked = False, handicapping = Standard, versus = "" }
 
   -- Say one thing, then read what came back off the stream. Only the
   -- things that answer are asked this way.
