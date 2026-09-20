@@ -52,6 +52,7 @@ silent = Opponent { name  = "nobody"
 source :: Opponents
 source = Opponents { open  = \_ -> pure (Right silent)
                    , close = \_ -> pure ()
+                   , take' = \_ -> pure (Right silent)
                    , enter = pure (Right "nobody")
                    }
 
@@ -459,6 +460,40 @@ tabTitlesOf state = do
           (\at -> Adw.tabPageGetTitle =<< Adw.tabViewGetNthPage view at)
           [0 .. count - 1]
       _ -> pure []
+
+prop_anOfferIsShownOverTheBoardWithAWayToTakeIt :: Property
+prop_anOfferIsShownOverTheBoardWithAWayToTakeIt =
+  withTests 1 . property $ do
+    -- It has to survive being built, because a toast with a button on
+    -- it is the one kind this window had never made.
+    let offer = Invitation { from  = "lenzuru"
+                           , about = asking { against = Online }
+                           , token = 36052608
+                           , game  = 90881581
+                           }
+        asked = next oneGame (InTab 1 (Arrived (Invited offer)))
+    (titles, areas) <- evalIO . built asked $ \widget' -> do
+      titles <- titlesUnder widget'
+      areas  <- descendantsOf Gtk.DrawingArea widget'
+      pure (titles, length areas)
+    -- The window underneath is untouched: same board, same bar.
+    titles === [("Your move", aboutGame (theGame asked))]
+    areas === 1
+
+prop_anOfferArrivingPatchesTheWindow :: Property
+prop_anOfferArrivingPatchesTheWindow = withTests 1 . property $ do
+  -- The overlay is the window's outermost widget, so an offer that
+  -- tore it down would take the board and the tabs with it.
+  let offer = Invitation { from  = "lenzuru"
+                         , about = asking { against = Online }
+                         , token = 36052608
+                         , game  = 90881581
+                         }
+      asked = next oneGame (InTab 1 (Arrived (Invited offer)))
+  said <- evalIO . runUI $ do
+    made <- create (view' oneGame)
+    pure (decision made (view' oneGame) (view' asked))
+  said === Modified
 
 prop_theMenuComesFromTheMarkup :: Property
 prop_theMenuComesFromTheMarkup = withTests 1 . property $ do

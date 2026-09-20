@@ -31,7 +31,12 @@ import           Go.Types
 import           Stones.Ogs.Protocol
 import qualified Data.Aeson.Key                as Key
 import qualified Data.Aeson.KeyMap             as KeyMap
+import           Stones.Setup                   ( Against(..)
+                                                , Setup(..)
+                                                , Speed(..)
+                                                )
 import           Stones.Opponent                ( Clock(..)
+                                                , Invitation(..)
                                                 , Heard(..)
                                                 , Opening(..)
                                                 , Time(..)
@@ -303,6 +308,94 @@ prop_aRefusalIsAboutOneGameAndIsThatGamesNews = withTests 1 . property $ do
         ["type" .= ("gameOfferRejected" :: Text), "game_id" .= (1234 :: Int)]
   refusalOf 1234 "notification" [bare]
     === Just "The other side would not play that game."
+
+-- * A game somebody offered
+-----------------------------
+
+-- | Word for word what online-go.com sent when one account challenged
+-- another, with the parts that are nobody's business left out.
+offered :: Value
+offered = object
+  [ "type" .= ("challenge" :: Text)
+  , "challenge_id" .= (36052608 :: Int)
+  , "game_id" .= (90881581 :: Int)
+  , "player_id" .= (77 :: Int)
+  , "width" .= (19 :: Int)
+  , "height" .= (19 :: Int)
+  , "ranked" .= True
+  , "handicap" .= (-1 :: Int)
+  , "rules" .= ("japanese" :: Text)
+  , "challenger_color" .= ("automatic" :: Text)
+  , "time_control" .= object
+    [ "speed" .= ("correspondence" :: Text)
+    , "system" .= ("byoyomi" :: Text)
+    , "main_time" .= (604800 :: Int)
+    , "period_time" .= (86400 :: Int)
+    , "periods" .= (5 :: Int)
+    ]
+  , "user" .= object
+    [ "id" .= (1768491 :: Int), "username" .= ("lenzuru" :: Text) ]
+  ]
+
+prop_aGameSomebodyOffersSaysWhoAndWhatAndHowToAnswer :: Property
+prop_aGameSomebodyOffersSaysWhoAndWhatAndHowToAnswer =
+  withTests 1 . property $ do
+    case invitationFrom 77 "notification" [offered] of
+      Nothing    -> annotate "it read no offer at all" >> failure
+      Just offer -> do
+        offer.from === "lenzuru"
+        -- The offer's own number is what to answer with, and the game
+        -- is one the server picked before anybody said yes.
+        offer.token === 36052608
+        offer.game === 90881581
+        -- And what it is, in the terms the rest of this program uses.
+        offer.about.against === Online
+        offer.about.size === 19
+        offer.about.ranked === True
+        offer.about.speed === Correspondence
+        -- Taken down as a game against that player, so playing them
+        -- again afterwards asks the same person.
+        offer.about.versus === "lenzuru"
+
+prop_anOfferForSomebodyElseIsNotThisPlayersToTake :: Property
+prop_anOfferForSomebodyElseIsNotThisPlayersToTake =
+  withTests 1 . property $ do
+    -- One connection carries everything said to this player, and the
+    -- number on a notice is the player it was said to.
+    invitationFrom 99 "notification" [offered] === Nothing
+    -- And nothing else is an offer, however much it looks like one.
+    invitationFrom 77 "ui-push" [offered] === Nothing
+    invitationFrom 77 "notification" [object ["type" .= ("gameStarted" :: Text)]]
+      === Nothing
+
+prop_aBoardThisProgramDoesNotPlayOnIsNotAnOfferItCanTake :: Property
+prop_aBoardThisProgramDoesNotPlayOnIsNotAnOfferItCanTake =
+  withTests 1 . property $ do
+    -- The rules here are written for a square board, so an offer of
+    -- one that is not square is not an offer this program can say yes
+    -- to, and saying yes to one it cannot play would be worse than
+    -- leaving it alone.
+    let oblong = replacing "height" (toJSON (13 :: Int)) offered
+    invitationFrom 77 "notification" [oblong] === Nothing
+
+prop_aSpeedThisProgramDoesNotKnowIsTakenAsALiveGame :: Property
+prop_aSpeedThisProgramDoesNotKnowIsTakenAsALiveGame =
+  withTests 1 . property $ do
+    -- What the speed says here changes nothing about the game, which
+    -- the server is already running: it is what the window shows, and
+    -- live is what most games are.
+    let odd' = replacing "time_control"
+                        (object ["speed" .= ("glacial" :: Text)])
+                        offered
+
+    (speedOf <$> invitationFrom 77 "notification" [odd']) === Just Live
+    -- And with nothing said about it at all.
+    let quiet = replacing "time_control" Null offered
+    (speedOf <$> invitationFrom 77 "notification" [quiet]) === Just Live
+
+-- | How long an offered game is allowed to take.
+speedOf :: Invitation -> Speed
+speedOf offer = offer.about.speed
 
 -- * The counting at the end
 -----------------------------

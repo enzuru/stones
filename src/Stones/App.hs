@@ -122,6 +122,8 @@ data State = State
     -- started, so a second game of the same kind is one click.
   , opponents :: Opponents
     -- ^ Where a game gets its opponent, once there is a game.
+  , offers    :: [Invitation]
+    -- ^ Games somebody has offered and nobody has answered yet.
   , asides    :: [Aside]
     -- ^ Things said about games the player is not looking at, waiting
     -- to be shown over whatever they are looking at.
@@ -175,6 +177,8 @@ data Event
     -- ^ Give up the game showing, which is what the menu means by it.
   | AgainPressed TabId
     -- ^ Start this tab's game over, with what it was started from.
+  | OfferTaken Invitation
+    -- ^ Take a game somebody offered, in a tab of its own.
   | AsideGone Text
     -- ^ Something said over the board has left the screen.
   | ChatToggled Bool
@@ -199,6 +203,7 @@ startingState opponents opening = State { openTabs  = []
                                         , nextTab   = 1
                                         , opening   = opening
                                         , opponents = opponents
+                                        , offers    = []
                                         , asides    = []
                                         , showChat  = False
                                         , signing   = SignedOut
@@ -234,9 +239,18 @@ update' state = \case
     _                -> Transition state (perform (Nothing <$ state.opponents.close them))
   TabOpened tab (Left  why   ) -> inGame state tab (stayAt . couldNotOpen why)
 
+  -- An offer is not about the game it arrives on. A connection carries
+  -- everything said to this player, and a game somebody is offering is
+  -- one of those things, so the window takes it rather than the game.
+  InTab _ (Arrived (Invited offer)) -> Transition
+    state { offers = keepingLast asidesKept (state.offers <> [offer]) }
+    none
+
   InTab tab event              -> inGame (noticing state tab event)
                                          tab
                                          (`step` event)
+
+  OfferTaken offer             -> taking state offer
 
   AgainPressed tab             -> case lookup tab state.openTabs of
     Just (Playing session) | canPlayAgain session -> again state tab session
@@ -268,6 +282,26 @@ update' state = \case
     Just (tab, _) -> inGame state tab (`step` ResignPressed)
     Nothing       -> Transition state none
 
+-- | Take a game somebody offered, in a tab of its own.
+--
+-- A tab of its own because the game that is running is still running:
+-- an offer arrives while somebody is playing, and most of the time the
+-- one it follows is the one that just ended in the tab it came in on.
+--
+-- The offer is taken off the list whether it works or not. Saying yes
+-- twice to one offer is saying yes to a game that already started.
+taking :: State -> Invitation -> Transition State Event
+taking state offer = Transition
+  state { openTabs = state.openTabs <> [(tab, Playing (starting offer.about))]
+        , showing  = Just tab
+        , nextTab  = tab + 1
+        , offers   = [ other | other <- state.offers, other.token /= offer.token ]
+        }
+  (keyed (findingIn tab)
+         (perform (Just . TabOpened tab <$> state.opponents.take' offer))
+  )
+  where tab = state.nextTab
+
 -- | Start a tab's game over, with what it was started from rather than
 -- with whatever the page is asking for now.
 --
@@ -297,7 +331,12 @@ noticing state tab = \case
     }
   _ -> state
  where
-  lastFew asides = drop (length asides - asidesKept) asides
+  lastFew asides = keepingLast asidesKept asides
+
+-- | The last few of a list, and all of it when there are no more than
+-- that.
+keepingLast :: Int -> [a] -> [a]
+keepingLast many held = drop (length held - many) held
 
 -- | Is the player looking at what is said about this game?
 watching :: State -> TabId -> Bool

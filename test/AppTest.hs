@@ -63,6 +63,7 @@ program = silent { name = "GNU Go", talks = False, again = Nothing }
 source :: Opponents
 source = Opponents { open  = \_ -> pure (Right silent)
                    , close = \_ -> pure ()
+                   , take' = \_ -> pure (Right silent)
                    , enter = pure (Right "nobody")
                    }
 
@@ -77,6 +78,7 @@ countingSource = do
   pure
     ( Opponents { open  = \_ -> Right silent <$ handedOut
                 , close = \_ -> handedBack
+                , take' = \_ -> Right silent <$ handedOut
                 , enter = pure (Right "nobody")
                 }
     , counts
@@ -413,6 +415,85 @@ prop_startingOverDoesNothingToAGameSomebodyIsWaitingOn =
     null (jobsOf (commandOf (update' (next empty' NewTabPressed) (AgainPressed 1))))
       === True
 
+-- * A game somebody offered
+-----------------------------
+
+-- | A game offered by somebody nobody here asked.
+offer :: Invitation
+offer = Invitation { from  = "lenzuru"
+                   , about = asking { against = Online, versus = "lenzuru" }
+                   , token = 36052608
+                   , game  = 90881581
+                   }
+
+-- | A window with a game going and an offer waiting on it.
+invited :: State
+invited = next oneGame (InTab 1 (Arrived (Invited offer)))
+
+prop_anOfferIsTheWindowsRatherThanTheGamesItArrivedOn :: Property
+prop_anOfferIsTheWindowsRatherThanTheGamesItArrivedOn =
+  withTests 1 . property $ do
+    -- A connection carries everything said to this player, so an offer
+    -- comes in on whatever game happens to be open. It is not about
+    -- that game and does not touch it.
+    map (.from) invited.offers === ["lenzuru"]
+    fmap (capturedBy Black . (.captures) . (.game)) (gameIn 1 invited)
+      === Just 0
+    map fst invited.openTabs === [1]
+
+prop_takingAnOfferOpensATabOfItsOwn :: Property
+prop_takingAnOfferOpensATabOfItsOwn = withTests 1 . property $ do
+  -- The game that is running is still running. Most of the time the
+  -- one an offer follows is the one that just ended in the tab it came
+  -- in on, and that tab still has the finished board in it.
+  let taken = next invited (OfferTaken offer)
+  map fst taken.openTabs === [1, 2]
+  taken.showing === Just 2
+  -- Asked for under the new tab's name, so closing that tab stops it.
+  namesOf invited (OfferTaken offer) === [Just "finding game-2"]
+  -- And the game it opens is the one that was offered, so playing
+  -- again afterwards asks the same person.
+  fmap (.setup) (gameIn 2 taken) === Just offer.about
+
+prop_anOfferIsOffTheListOnceItHasBeenAnsweredFor :: Property
+prop_anOfferIsOffTheListOnceItHasBeenAnsweredFor =
+  withTests 1 . property $ do
+    -- Saying yes twice to one offer is saying yes to a game that
+    -- already started.
+    (next invited (OfferTaken offer)).offers === []
+    -- Whether it worked or not: the answer goes the same way either
+    -- way, and the offer is spent.
+    let other = offer { token = 1, from = "somebody else" }
+        both  = next invited (InTab 1 (Arrived (Invited other)))
+    map (.from) (next both (OfferTaken offer)).offers === ["somebody else"]
+
+prop_takingAnOfferGoesToWhereverOffersAreTaken :: Property
+prop_takingAnOfferGoesToWhereverOffersAreTaken = property $ do
+  -- Taking one is a different thing from asking for a game, and it is
+  -- not the asking that answers it.
+  asked' <- evalIO (newIORef (0 :: Int, 0 :: Int))
+  let noting = source
+        { open  = \_ -> Right silent <$ modifyIORef' asked' (\(a, t) -> (a + 1, t))
+        , take' = \_ -> Right silent <$ modifyIORef' asked' (\(a, t) -> (a, t + 1))
+        }
+      window = next (startingState noting asking) NewTabPressed
+  _      <- ran (next window (InTab 1 (Arrived (Invited offer))))
+                (OfferTaken offer)
+  counts <- evalIO (readIORef asked')
+  counts === (0, 1)
+
+prop_noMoreOffersAreKeptThanAnybodyReads :: Property
+prop_noMoreOffersAreKeptThanAnybodyReads = property $ do
+  -- The list only shrinks when somebody answers one, and nobody has to
+  -- answer any of them, so it is capped rather than trusted.
+  many <- forAll (Gen.int (Range.linear 0 12))
+  let piled = foldl
+        (\state n -> next state (InTab 1 (Arrived (Invited offer { token = n }))))
+        oneGame
+        [1 .. many]
+  assert (length piled.offers <= asidesKept)
+  assert (length piled.offers == min many asidesKept)
+
 -- * Talking
 -------------
 
@@ -596,6 +677,7 @@ prop_aSourceMadeOfTwoPicksByWhereTheGameIsPlayed = property $ do
   let noting what = Opponents
         { open  = \_ -> Right silent <$ modifyIORef' asked' (<> [what])
         , close = \_ -> pure ()
+        , take' = \_ -> pure (Right silent)
         , enter = pure (Right what)
         }
       both = choosing (noting "computer") (noting "online")

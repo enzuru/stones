@@ -268,6 +268,8 @@ withGnuGo program use = bracket (newIORef []) stopEveryone $ \running ->
                   -- There is nobody to be, so there is nothing to sign
                   -- in as. The window never asks this of a game on
                   -- this machine, and says so if it ever does.
+                , take' = \_ ->
+                  pure (Left "Nobody on this computer offers a game.")
                 , enter = pure (Left "Games on this computer need no account.")
                 }
  where

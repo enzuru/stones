@@ -25,6 +25,7 @@ module Stones.Ogs.Challenge
   , startedFrom
   , playerFrom
   , challenging
+  , accepting
   , findPlayer
   )
 where
@@ -179,6 +180,20 @@ challenging token who setup = calling
   ("https://online-go.com/api/v1/players/" <> Text.pack (show who) <> "/challenge")
   (Just (asking setup))
   startedFrom
+
+-- | Say yes to a game somebody offered.
+--
+-- The game it makes is the one the offer already named, so there is
+-- nothing to read out of the answer beyond whether it was taken.
+accepting :: Text -> Int -> IO (Either Text ())
+accepting token offer = calling
+  token
+  (  "https://online-go.com/api/v1/me/challenges/"
+  <> Text.pack (show offer)
+  <> "/accept"
+  )
+  (Just (object []))
+  (const (Right ()))
 
 -- | The number online-go.com knows somebody by, given their name.
 findPlayer :: Text -> Text -> IO (Either Text Int)

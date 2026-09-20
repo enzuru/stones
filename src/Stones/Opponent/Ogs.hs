@@ -169,10 +169,19 @@ hearing log' connection table = for connection.heard $ \case
   Right (Event name args _) -> do
     where' <- liftIO (readIORef table)
     case incoming where' name args of
-      -- Either it is about another game, or it is something this
-      -- program has nothing to do with. Which of the two it is is
-      -- worth writing down: the second is a gap, and the first is not.
-      Nothing -> liftIO (log'.note ("    nothing to do with " <> name))
+      Nothing -> case invitationFrom where'.me name args of
+        -- Not about this game, or about any game: somebody somewhere
+        -- picked this player and said they would like a game. A
+        -- connection carries everything said to this player, and this
+        -- is one of those things.
+        Just offer -> do
+          liftIO (log'.note ("    offered a game by " <> offer.from))
+          yield (Invited offer)
+        -- Either it is about another game, or it is something this
+        -- program has nothing to do with. Which of the two it is is
+        -- worth writing down: the second is a gap, and the first is
+        -- not.
+        Nothing -> liftIO (log'.note ("    nothing to do with " <> name))
       Just heard -> do
         liftIO (log'.note ("    " <> name <> " -> " <> Text.pack (show heard)))
         liftIO (following table args heard)

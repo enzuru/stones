@@ -446,6 +446,9 @@ arrived session = \case
   Hushed            -> stay session { said = [] }
   Undid count       -> tookBack session count
   Ticked clock      -> stay session { clock = Just clock }
+  -- Not about this game. The window takes it off the stream before it
+  -- gets here, and a game that is handed one anyway leaves it alone.
+  Invited _         -> stay session
   -- The game has stopped. Whatever is already marked stays marked:
   -- this says which part of the game it is and not what is in it, and
   -- the two arrive in whichever order they arrive in.

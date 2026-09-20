@@ -27,6 +27,7 @@ module Stones.Opponent
   , Told(..)
   , Heard(..)
   , Opening(..)
+  , Invitation(..)
   , Clock(..)
   , Time(..)
   , ticking
@@ -77,6 +78,8 @@ data Opponents = Opponents
     -- ^ An opponent for a game set up like this.
   , close :: Opponent -> IO ()
     -- ^ Let one go, when the game it was playing has closed.
+  , take' :: Invitation -> IO (Either Text Opponent)
+    -- ^ Take a game somebody else offered, rather than asking for one.
   , enter :: IO (Either Text Text)
     -- ^ Sign in wherever the games are, answering with what to call
     -- the player. Only one of the two places asks for it, and the
@@ -95,8 +98,30 @@ choosing computer online = Opponents
               Computer -> computer.open setup
               Online   -> online.open setup
   , close = (.leave)
+    -- Only one of the two places has anybody in it to offer a game.
+  , take' = online.take'
   , enter = online.enter
   }
+
+-- | A game somebody has offered to play.
+--
+-- It arrives out of nowhere: not an answer to anything this program
+-- asked for, and not about any game it is already playing. Somebody
+-- somewhere picked this player and said they would like a game.
+data Invitation = Invitation
+  { from  :: Text
+    -- ^ Who is offering.
+  , about :: Setup
+    -- ^ What they are offering, as far as it can be said in the terms
+    -- the rest of this program uses.
+  , token :: Int
+    -- ^ What to answer with, which is the offer's own number rather
+    -- than anything about the game.
+  , game  :: Int
+    -- ^ The game it would be. The server picks one when the offer is
+    -- made, before anybody has said yes.
+  }
+  deriving (Eq, Show)
 
 -- | What this program does, which the other side is told about.
 --
@@ -226,6 +251,10 @@ data Heard
     -- ^ The stones marked dead, as they now stand. The whole set every
     -- time, rather than what changed, so a window that missed one is
     -- not left showing a board nobody else can see.
+  | Invited Invitation
+    -- ^ Somebody has offered a game. It is not about the game it
+    -- arrives on: a connection carries everything said to this player,
+    -- and an offer is one of those things.
   | Ticked Clock
     -- ^ Where the clocks are. It arrives when something happens and
     -- not in between.

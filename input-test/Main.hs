@@ -77,6 +77,7 @@ passing = do
 source :: Opponents
 source = Opponents { open  = \_ -> Right <$> passing
                    , close = \_ -> pure ()
+                   , take' = \_ -> Right <$> passing
                    , enter = pure (Left "there is nothing to sign in to here")
                    }
 

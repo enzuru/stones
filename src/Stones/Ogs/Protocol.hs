@@ -30,6 +30,7 @@ module Stones.Ogs.Protocol
   , outgoing
   , incoming
   , refusalOf
+  , invitationFrom
   )
 where
 
@@ -42,6 +43,7 @@ import qualified Data.Aeson.Types              as Aeson
 import           Data.Scientific                ( toBoundedInteger
                                                 , toRealFloat
                                                 )
+import           Data.Maybe                     ( listToMaybe )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import qualified Data.Vector                   as Vector
@@ -51,7 +53,15 @@ import           Go.Board                       ( coords
                                                 )
 import           Go.Game
 import           Go.Types
+import           Stones.Setup                   ( Against(..)
+                                                , Setup(..)
+                                                , Speed(..)
+                                                , defaultSetup
+                                                , speedName
+                                                , speeds
+                                                )
 import           Stones.Opponent                ( Clock(..)
+                                                , Invitation(..)
                                                 , Heard(..)
                                                 , Opening(..)
                                                 , Time(..)
@@ -385,6 +395,61 @@ refusalOf game name arguments = do
              id
              (fieldOf "message" body >>= asString)
       )
+
+-- | A game somebody has offered, if this is that.
+--
+-- Like a refusal, it arrives as a notice to the player rather than as
+-- an event about a game, because it is not about a game anybody is
+-- playing. It carries a game all the same: the server picks one when
+-- the offer is made, before anybody has said yes, so accepting is a
+-- matter of saying so and then joining a game that is already there.
+--
+-- What comes back is put in the terms the rest of this program uses,
+-- which do not stretch to everything an offer can say. A board that is
+-- not square is not a board this program plays on, and an offer of one
+-- is not an offer it can take.
+invitationFrom :: Int -> Text -> [Value] -> Maybe Invitation
+invitationFrom player name arguments = do
+  body <- case (name, arguments) of
+    ("notification", first : _) -> Just first
+    _                           -> Nothing
+  kind <- fieldOf "type" body >>= asString
+  mine <- fieldOf "player_id" body >>= asWhole
+  offer <- fieldOf "challenge_id" body >>= asWhole
+  game <- fieldOf "game_id" body >>= asWhole
+  width <- fieldOf "width" body >>= asWhole
+  height <- fieldOf "height" body >>= asWhole
+  who <- fieldOf "user" body >>= fieldOf "username" >>= asString
+  if kind /= "challenge" || mine /= player || width /= height
+    then Nothing
+    else Just Invitation
+      { from  = who
+      , about = defaultSetup { against  = Online
+                             , size     = width
+                             , ranked   = maybe False id
+                                            (fieldOf "ranked" body >>= asBool)
+                             , speed    = speedIn body
+                             , versus   = who
+                             }
+      , token = offer
+      , game  = game
+      }
+
+-- | A yes or a no, if that is what this is.
+asBool :: Value -> Maybe Bool
+asBool = \case
+  Bool yes -> Just yes
+  _        -> Nothing
+
+-- | How long the offered game is allowed to take.
+--
+-- The server's own word for it, and a game whose word this program
+-- does not know is taken as a live one, because that is the one most
+-- games are.
+speedIn :: Value -> Speed
+speedIn body = case fieldOf "time_control" body >>= fieldOf "speed" >>= asString of
+  Just said -> maybe Live id (listToMaybe [ how | how <- speeds, speedName how == said ])
+  Nothing   -> Live
 
 -- | What to say to the game when an event arrives, if anything.
 --

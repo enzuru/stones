@@ -133,6 +133,7 @@ withOnlineWith log' outside use = do
   use
       Opponents { open  = finding log' outside who held
                 , close = (.leave)
+                , take' = taking log' outside who held
                 , enter = entering log' outside who
                 }
     `finally` (readIORef held >>= \open' -> for_ open' (.stop))
@@ -184,6 +185,39 @@ finding log' outside who held setup = readIORef who >>= \case
       case found of
         Left  why -> Left why <$ log'.note ("no game: " <> why)
         Right it  -> pure (Right it)
+
+-- | Take a game somebody offered.
+--
+-- Saying yes is a call to the website, like asking for one. What comes
+-- back is nothing worth reading: the offer already named the game, so
+-- there is nothing left but to join it.
+taking
+  :: Log
+  -> Reaching
+  -> IORef (Maybe Signed)
+  -> IORef [Socket]
+  -> Invitation
+  -> IO (Either Text Opponent)
+taking log' outside who held offer = readIORef who >>= \case
+  Nothing     -> pure (Left "Sign in to online-go.com first.")
+  Just signed -> Challenge.accepting signed.token offer.token >>= \case
+    Left why -> Left why <$ log'.note ("could not take the game: " <> why)
+    Right () -> do
+      log'.note
+        (  "took the game "
+        <> Text.pack (show offer.game)
+        <> " offered by "
+        <> offer.from
+        )
+      outside.dial >>= \case
+        Left why -> Left why <$ log'.note ("could not connect: " <> why)
+        Right dialled -> do
+          let connection = watching log' dialled
+          modifyIORef' held (connection :)
+          Account.signingIn connection signed.account >>= \case
+            Left why -> Left why <$ connection.stop
+            Right () ->
+              Ogs.joining log' connection signed.account.player offer.game
 
 -- | A game against whoever else is looking for the same one.
 looking :: Log -> Signed -> Socket -> Setup -> IO (Either Text Opponent)
