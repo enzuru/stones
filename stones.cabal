@@ -45,6 +45,7 @@ library
                     , Stones.Ogs.Frame
                     , Stones.Ogs.Login
                     , Stones.Ogs.Protocol
+                    , Stones.Ogs.Seek
                     , Stones.Ogs.Socket
                     , Stones.Opponent
                     , Stones.Opponent.GnuGo
@@ -126,6 +127,7 @@ test-suite stones-tests
                     , OgsOpponentTest
                     , ProtocolMessageTest
                     , ProtocolTest
+                    , SeekTest
                     , SessionTest
                     , SocketTest
                     , SetupTest

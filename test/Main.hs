@@ -34,6 +34,7 @@ import qualified GtpTest
 import qualified OgsOpponentTest
 import qualified ProtocolMessageTest
 import qualified ProtocolTest
+import qualified SeekTest
 import qualified SessionTest
 import qualified SetupTest
 import qualified TypesTest
@@ -56,6 +57,7 @@ main = do
     , ProtocolMessageTest.tests
     , AccountTest.tests
     , OgsOpponentTest.tests
+    , SeekTest.tests
     , SetupTest.tests
     , SessionTest.tests
     , AppTest.tests
