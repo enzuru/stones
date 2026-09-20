@@ -34,7 +34,7 @@
         # to make and hash a verifier.
         aeson websockets wuss network
         http-client http-client-tls
-        crypton base64-bytestring random
+        cryptohash-sha256 base64-bytestring random
         haskell-gi haskell-gi-base haskell-gi-overloading
         gi-glib gi-gobject gi-gio gi-gdk gi-gtk gi-gsk gi-pango
         gi-cairo gi-cairo-render gi-cairo-connector

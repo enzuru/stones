@@ -42,6 +42,7 @@ library
                     , Stones.App
                     , Stones.Ogs
                     , Stones.Ogs.Frame
+                    , Stones.Ogs.Login
                     , Stones.Opponent
                     , Stones.Opponent.GnuGo
                     , Stones.Opponent.Gtp
@@ -53,6 +54,13 @@ library
                     , Stones.Setup
   build-depends:      base                            >=4.10 && <5
                     , aeson                           >=2    && <3
+                    , base64-bytestring               >=1    && <2
+                    , bytestring                      >=0.10 && <0.13
+                    , cryptohash-sha256               >=0.11 && <0.12
+                    , http-client                     >=0.7  && <0.8
+                    , http-client-tls                 >=0.3  && <0.4
+                    , network                         >=3    && <4
+                    , random                          >=1.2  && <1.4
                     , containers                      >=0.6  && <0.9
                     , gi-adwaita                      >=1    && <2
                     , gi-cairo-connector              >=0.1  && <0.2
@@ -102,6 +110,7 @@ test-suite stones-tests
                     , DrawTest
                     , FakeEngineTest
                     , FrameTest
+                    , LoginTest
                     , GameTest
                     , GeometryTest
                     , GtpTest
@@ -116,6 +125,7 @@ test-suite stones-tests
                     , containers
                     , directory                       >=1.3  && <1.4
                     , gi-cairo-render                 >=0.1  && <0.2
+                    , http-client
                     , gi-gtk4-declarative-app-simple
                     , hedgehog                        >=1    && <2
                     , pipes                           >=4    && <5
