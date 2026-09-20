@@ -797,6 +797,9 @@ onlyTheBoard tab session = toEvent <$> goban
     , coordinates = True
     , dead        = deadIn session
     , marking     = settling session
+      -- Not while it is being counted: there is still something to do
+      -- on it then, and a board gone quiet says there is not.
+    , over        = finished game && not (settling session)
     }
   toEvent (GobanClicked coord) = InTab tab (Clicked coord)
 

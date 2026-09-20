@@ -48,6 +48,7 @@ shown = GobanProps { board = boardOf 9 [(Black, (2, 2)), (White, (4, 4))]
                    , coordinates = True
                    , dead        = []
                    , marking     = False
+                   , over        = False
                    }
 
 -- | Draw a board onto a surface this size, and answer with its pixels.
@@ -151,6 +152,47 @@ prop_anOblongWindowLeavesTheBoardSquare = withTests 1 . property $ do
   let row = ByteString.take 40 wide
   assert (blank row)
   assert (not (blank wide))
+
+prop_aGameThatIsOverIsDrawnWithTheColourTakenOut :: Property
+prop_aGameThatIsOverIsDrawnWithTheColourTakenOut =
+  withTests 1 . property $ do
+    -- A glance at a window full of tabs should say which games are
+    -- still going.
+    going <- evalIO (drawn shown)
+    quiet <- evalIO (drawn shown { over = True })
+    assert (going /= quiet)
+    -- Nothing is hidden and nothing moves. The same board, gone
+    -- quiet, so it is still the same amount of picture.
+    assert (not (blank quiet))
+    ByteString.length quiet === ByteString.length going
+
+prop_takingTheColourOutLeavesTheBrightnessAlone :: Property
+prop_takingTheColourOutLeavesTheBrightnessAlone = property $ do
+  -- By how bright a colour looks rather than by averaging the three,
+  -- because the eye takes far more of its brightness from green than
+  -- from blue, and an average turns a warm board into flat mud.
+  r <- forAll level
+  g <- forAll level
+  b <- forAll level
+  let (r', g', b') = greyed (r, g, b)
+  -- Grey, and no brighter or darker than what it came from.
+  r' === g'
+  g' === b'
+  assert (r' >= min r (min g b) - 0.000001)
+  assert (r' <= max r (max g b) + 0.000001)
+  -- Green counts for more than blue, which is what makes it look
+  -- right rather than muddy.
+  let brightness (x, _, _) = x
+  assert (brightness (greyed (0, 1, 0)) > brightness (greyed (0, 0, 1)))
+  -- And a grey stays where it was, give or take the last bit of a
+  -- Double: the three weights add up to one only as closely as binary
+  -- lets them.
+  let (same, _, _) = greyed (r, r, r)
+  assert (abs (same - r) <= 0.000001)
+
+-- | Any amount of one colour.
+level :: Gen Double
+level = Gen.double (Range.linearFrac 0 1)
 
 -- * What a click does
 ----------------------

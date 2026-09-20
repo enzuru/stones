@@ -34,6 +34,7 @@ module Stones.Goban
   , clickAt
   , pointerAt
   , wouldTakeAStone
+  , greyed
   , takesClickAt
   , clicked
   , pointerMoved
@@ -81,6 +82,10 @@ data GobanProps = GobanProps
     -- ^ Whether a click is about the group under it rather than about
     -- the point. This is what the end of a game is: the board takes no
     -- more moves, and a click marks a group dead or brings it back.
+  , over       :: !Bool
+    -- ^ Whether the game has ended. A board nobody is going to play on
+    -- again is drawn with the colour taken out of it, so that a glance
+    -- at a window full of tabs says which games are still going.
   }
   deriving (Eq, Show)
 
@@ -292,6 +297,23 @@ data Palette = Palette
   , label   :: (Double, Double, Double)
   }
 
+-- | The same colour with the colour taken out of it.
+--
+-- By how bright it looks rather than by averaging the three, because
+-- the eye takes far more of its brightness from green than from blue,
+-- and an average turns a warm board into flat mud.
+greyed :: (Double, Double, Double) -> (Double, Double, Double)
+greyed (r, g, b) = (bright, bright, bright)
+  where bright = 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+-- | The same palette with the colour taken out of all of it.
+greying :: Palette -> Palette
+greying ink = Palette { top    = greyed ink.top
+                      , bottom = greyed ink.bottom
+                      , line   = greyed ink.line
+                      , label  = greyed ink.label
+                      }
+
 -- | The wood is the same wood in both styles, a little darker in the
 -- dark one, so that a lit board does not glare out of a dark window.
 palette :: Bool -> Palette
@@ -310,11 +332,15 @@ palette dark
 -- | Draw the whole board into a space this wide and this tall.
 draw
   :: GobanProps -> Bool -> Maybe Coord -> Double -> Double -> Cairo.Render ()
-draw props@GobanProps { board, last = played, coordinates, dead } dark hovered width height
+draw props@GobanProps { board, last = played, coordinates, dead, over } dark hovered width height
   = do
     let n       = board.size
         geo     = geometry n width height
-        ink     = palette dark
+        -- A game nobody is going to play on again is drawn with the
+        -- colour taken out of it. Nothing is hidden and nothing moves:
+        -- the same board, gone quiet, which is what it has done.
+        ink     = (if over then greying else id) (palette dark)
+        shade   = (if over then greyBoth else id) . stoneShades
         marked  = Set.fromList dead
         standing =
           [ (point, stone)
@@ -325,9 +351,9 @@ draw props@GobanProps { board, last = played, coordinates, dead } dark hovered w
     drawGrid ink geo
     drawStars ink geo
     when coordinates (drawLabels ink geo)
-    mapM_ (drawStoneAt geo)
+    mapM_ (drawStoneAt shade geo)
           [ stone | stone <- standing, not (Set.member (fst stone) marked) ]
-    mapM_ (drawDeadAt geo)
+    mapM_ (drawDeadAt shade geo)
           [ stone | stone <- standing, Set.member (fst stone) marked ]
     mapM_ (drawLastMark geo board) played
     drawHover props geo hovered
@@ -339,10 +365,10 @@ draw props@GobanProps { board, last = played, coordinates, dead } dark hovered w
 -- screen. It is still on the board: nothing has been taken off, and
 -- the two players are agreeing about what would have happened rather
 -- than making it happen.
-drawDeadAt :: Geometry -> (Coord, Color) -> Cairo.Render ()
-drawDeadAt geo (coord, color) = do
+drawDeadAt :: Shades -> Geometry -> (Coord, Color) -> Cairo.Render ()
+drawDeadAt shade geo (coord, color) = do
   Cairo.pushGroup
-  drawStoneAt geo (coord, color)
+  drawStoneAt shade geo (coord, color)
   Cairo.popGroupToSource
   Cairo.paintWithAlpha 0.3
   let (x, y) = centreOf geo coord
@@ -446,8 +472,8 @@ drawLabels Palette { label = (r, g, b) } geo = do
 
 -- | One stone, with a shadow under it and a highlight on it, so that
 -- black on a dark line and white on light wood both stand out.
-drawStoneAt :: Geometry -> (Coord, Color) -> Cairo.Render ()
-drawStoneAt geo (coord, color) = do
+drawStoneAt :: Shades -> Geometry -> (Coord, Color) -> Cairo.Render ()
+drawStoneAt shade geo (coord, color) = do
   let (x, y) = centreOf geo coord
       radius = geo.stone
   Cairo.setSourceRGBA 0 0 0 0.28
@@ -460,7 +486,7 @@ drawStoneAt geo (coord, color) = do
                           y
                           radius
     $ \pattern' -> do
-        let (near, far) = stoneShades color
+        let (near, far) = shade color
         stop pattern' 0 near
         stop pattern' 1 far
         Cairo.setSource pattern'
@@ -474,11 +500,20 @@ drawStoneAt geo (coord, color) = do
  where
   stop pattern' at (r, g, b) = Cairo.patternAddColorStopRGB pattern' at r g b
 
+-- | How a stone of one colour is shaded: the lit side and the far
+-- side.
+type Shades = Color -> ((Double, Double, Double), (Double, Double, Double))
+
 -- | The lit side and the far side of a stone.
-stoneShades
-  :: Color -> ((Double, Double, Double), (Double, Double, Double))
+stoneShades :: Shades
 stoneShades Black = ((0.42, 0.42, 0.46), (0.04, 0.04, 0.07))
 stoneShades White = ((1.00, 1.00, 0.99), (0.79, 0.78, 0.75))
+
+-- | Both sides of one, with the colour taken out.
+greyBoth
+  :: ((Double, Double, Double), (Double, Double, Double))
+  -> ((Double, Double, Double), (Double, Double, Double))
+greyBoth (near, far) = (greyed near, greyed far)
 
 -- | The ring on the stone that was played last.
 drawLastMark :: Geometry -> Board -> Coord -> Cairo.Render ()

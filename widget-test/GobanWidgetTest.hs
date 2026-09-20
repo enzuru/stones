@@ -38,6 +38,7 @@ empty' = GobanProps { board       = emptyBoard 9
                     , coordinates = True
                     , dead        = []
                     , marking     = False
+                    , over        = False
                     }
 
 -- | The same board with a stone on it.
