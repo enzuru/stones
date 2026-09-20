@@ -43,6 +43,7 @@ library
                     , Stones.Ogs
                     , Stones.Ogs.Frame
                     , Stones.Ogs.Login
+                    , Stones.Ogs.Protocol
                     , Stones.Ogs.Socket
                     , Stones.Opponent
                     , Stones.Opponent.GnuGo
@@ -63,6 +64,7 @@ library
                     , http-client-tls                 >=0.3  && <0.4
                     , network                         >=3    && <4
                     , random                          >=1.2  && <1.4
+                    , scientific                      >=0.3  && <0.4
                     , websockets                      >=0.12 && <0.14
                     , wuss                            >=2    && <3
                     , containers                      >=0.6  && <0.9
@@ -118,6 +120,7 @@ test-suite stones-tests
                     , GameTest
                     , GeometryTest
                     , GtpTest
+                    , ProtocolMessageTest
                     , ProtocolTest
                     , SessionTest
                     , SocketTest

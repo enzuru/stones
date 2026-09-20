@@ -30,6 +30,7 @@ import qualified SocketTest
 import qualified GameTest
 import qualified GeometryTest
 import qualified GtpTest
+import qualified ProtocolMessageTest
 import qualified ProtocolTest
 import qualified SessionTest
 import qualified SetupTest
@@ -50,6 +51,7 @@ main = do
     , LoginTest.tests
     , SocketTest.tests
     , ProtocolTest.tests
+    , ProtocolMessageTest.tests
     , SetupTest.tests
     , SessionTest.tests
     , AppTest.tests
