@@ -48,7 +48,7 @@ prop_aChoiceChangesTheOneThingItIsAbout :: Property
 prop_aChoiceChangesTheOneThingItIsAbout = withTests 1 . property $ do
   chose defaultSetup (ChoseBoard 9) === defaultSetup { size = 9 }
   chose defaultSetup (ChoseSide White)
-    === Setup { against = Computer, size = 19, human = White, strength = Fierce, handicap = 0 }
+    === Setup { against = Computer, size = 19, human = White, strength = Fierce, handicap = 0, versus = "" }
   chose defaultSetup (ChoseStrength Gentle) === defaultSetup { strength = Gentle }
   chose defaultSetup (ChosePlace Online) === defaultSetup { against = Online }
   -- Signing in is not a choice about the game. It is about the window,
@@ -77,7 +77,7 @@ prop_thePageSaysWhatItIsAskingFor :: Property
 prop_thePageSaysWhatItIsAskingFor = withTests 1 . property $ do
   describeSetup defaultSetup === "19\215\&19  \183  Black  \183  Fierce"
   describeSetup
-      Setup { against = Computer, size = 9, human = White, strength = Gentle, handicap = 0 }
+      Setup { against = Computer, size = 9, human = White, strength = Gentle, handicap = 0, versus = "" }
     === "9\215\&9  \183  White  \183  Gentle"
 
 prop_aPageAskingAboutAServerSaysNothingAboutAnEngine :: Property

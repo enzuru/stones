@@ -109,6 +109,7 @@ main = do
                                         , human    = Black
                                         , strength = Gentle
                                         , handicap = 0
+                                        , versus   = ""
                                         }
   void (run window { update = reporting
                    , inputs = inputs window <> [past, quitWhenTold]

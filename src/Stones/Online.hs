@@ -21,7 +21,8 @@
 -- two games reading the same one would take each other's events, and a
 -- window with two tabs would play half a game in each.
 module Stones.Online
-  ( Reaching(..)
+  ( Signed(..)
+  , Reaching(..)
   , reaching
   , withOnline
   , withOnlineWith
@@ -48,6 +49,7 @@ import qualified System.Timeout                as Timeout
 import           Stones.Ogs.Account             ( Account(..) )
 import qualified Stones.Ogs.Account            as Account
 import           Stones.Ogs.Frame               ( Packet(..) )
+import qualified Stones.Ogs.Challenge          as Challenge
 import qualified Stones.Ogs.Login              as Login
 import           Stones.Ogs.Seek                ( Seek(..)
                                                 , Speed(..)
@@ -55,6 +57,9 @@ import           Stones.Ogs.Seek                ( Seek(..)
 import qualified Stones.Ogs.Seek               as Seek
 import           Stones.Ogs.Socket              ( Socket(..) )
 import qualified Stones.Ogs.Socket             as Socket
+import           Stones.Log                     ( Log(..)
+                                                , watching
+                                                )
 import           Stones.Opponent
 import qualified Stones.Opponent.Ogs           as Ogs
 import           Stones.Setup                   ( Setup(..) )
@@ -66,8 +71,18 @@ import           Stones.Setup                   ( Setup(..) )
 -- then asks online-go.com who came back, and the connection, because
 -- it is a socket.
 data Reaching = Reaching
-  { signIn :: IO (Either Text Account)
+  { signIn :: IO (Either Text Signed)
   , dial   :: IO (Either Text Socket)
+  }
+
+-- | Somebody signed in, and what it takes to act as them.
+--
+-- The token is kept as well as the account, because asking a named
+-- player for a game is a call to the website rather than something
+-- said over the connection, and that call is made with the token.
+data Signed = Signed
+  { account :: Account
+  , token   :: Text
   }
 
 -- | The real ones, with this for opening the browser.
@@ -76,9 +91,10 @@ reaching browse = Reaching
   { signIn = Login.login browse >>= \case
     Left  why    -> pure (Left why)
     -- Who the token belongs to, which is also what the connection is
-    -- signed in with. The token itself is not kept: nothing after this
-    -- point uses it.
-    Right tokens -> Account.whoAmI tokens.access
+    -- signed in with.
+    Right tokens -> Account.whoAmI tokens.access >>= \case
+      Left  why     -> pure (Left why)
+      Right account -> pure (Right (Signed account tokens.access))
   , dial   = Socket.open
   }
 
@@ -106,18 +122,18 @@ patience :: Int
 patience = 10 * 60
 
 -- | Games on online-go.com, for as long as this action runs.
-withOnline :: (Text -> IO ()) -> (Opponents -> IO a) -> IO a
-withOnline browse = withOnlineWith (reaching browse)
+withOnline :: Log -> (Text -> IO ()) -> (Opponents -> IO a) -> IO a
+withOnline log' browse = withOnlineWith log' (reaching browse)
 
 -- | The same, with what reaches outside handed in.
-withOnlineWith :: Reaching -> (Opponents -> IO a) -> IO a
-withOnlineWith outside use = do
+withOnlineWith :: Log -> Reaching -> (Opponents -> IO a) -> IO a
+withOnlineWith log' outside use = do
   who  <- newIORef Nothing
   held <- newIORef []
   use
-      Opponents { open  = finding outside who held
+      Opponents { open  = finding log' outside who held
                 , close = (.leave)
-                , enter = entering outside who
+                , enter = entering log' outside who
                 }
     `finally` (readIORef held >>= \open' -> for_ open' (.stop))
 
@@ -126,34 +142,91 @@ withOnlineWith outside use = do
 -- Signing in twice is signing in again: the browser is opened again
 -- and whoever comes back is who the window is afterwards. That is what
 -- a player who signed in as the wrong person would want.
-entering :: Reaching -> IORef (Maybe Account) -> IO (Either Text Text)
-entering outside who = outside.signIn >>= \case
-  Left  why     -> pure (Left why)
-  Right account -> Right account.username <$ writeIORef who (Just account)
+entering :: Log -> Reaching -> IORef (Maybe Signed) -> IO (Either Text Text)
+entering log' outside who = outside.signIn >>= \case
+  Left why -> Left why <$ log'.note ("sign in refused: " <> why)
+  Right signed -> do
+    log'.note
+      (  "signed in as "
+      <> signed.account.username
+      <> ", player "
+      <> Text.pack (show signed.account.player)
+      )
+    writeIORef who (Just signed)
+    pure (Right signed.account.username)
 
 -- | Look for a game, and play whatever is found.
 finding
-  :: Reaching
-  -> IORef (Maybe Account)
+  :: Log
+  -> Reaching
+  -> IORef (Maybe Signed)
   -> IORef [Socket]
   -> Setup
   -> IO (Either Text Opponent)
-finding outside who held setup = readIORef who >>= \case
-  Nothing      -> pure (Left "Sign in to online-go.com first.")
-  Just account -> outside.dial >>= \case
-    Left  why        -> pure (Left why)
-    Right connection -> do
+finding log' outside who held setup = readIORef who >>= \case
+  Nothing     -> pure (Left "Sign in to online-go.com first.")
+  Just signed -> outside.dial >>= \case
+    Left why -> Left why <$ log'.note ("could not connect: " <> why)
+    Right dialled -> do
+      let connection = watching log' dialled
       modifyIORef' held (connection :)
-      seek <- Seek.newSeek setup.size Live
-      -- Whatever this stops for, the looking is called off: a game, a
-      -- refusal, time running out, or the tab being closed while it
-      -- waits. A looking left running is somebody else paired into a
-      -- game with nobody at the other side of it.
-      let givingUp = giveUp connection seek
-      found <- pairing account connection seek `onException` givingUp
+      log'.note
+        (  "asking for a "
+        <> Text.pack (show setup.size)
+        <> "x"
+        <> Text.pack (show setup.size)
+        <> " game against "
+        <> (if Text.null setup.versus then "anybody" else setup.versus)
+        )
+      found <- if Text.null setup.versus
+        then looking log' signed connection setup
+        else asked log' signed connection setup
       case found of
-        Left  why  -> Left why <$ givingUp
-        Right them -> pure (Right them)
+        Left  why -> Left why <$ log'.note ("no game: " <> why)
+        Right it  -> pure (Right it)
+
+-- | A game against whoever else is looking for the same one.
+looking :: Log -> Signed -> Socket -> Setup -> IO (Either Text Opponent)
+looking log' signed connection setup = do
+  seek <- Seek.newSeek setup.size Live
+  -- Whatever this stops for, the looking is called off: a game, a
+  -- refusal, time running out, or the tab being closed while it
+  -- waits. A looking left running is somebody else paired into a
+  -- game with nobody at the other side of it.
+  let givingUp = giveUp connection seek
+  found <- pairing log' signed.account connection seek `onException` givingUp
+  case found of
+    Left  why  -> Left why <$ givingUp
+    Right them -> pure (Right them)
+
+-- | A game against somebody in particular.
+--
+-- Asking a named player is a call to the website rather than something
+-- said over the connection, and it answers with the game there and
+-- then, so there is nothing to wait for and nothing to call off. What
+-- there is to wait for is the other side accepting, which the game
+-- itself shows.
+asked :: Log -> Signed -> Socket -> Setup -> IO (Either Text Opponent)
+asked log' signed connection setup =
+  Challenge.findPlayer signed.token setup.versus >>= \case
+    Left  why -> Left why <$ connection.stop
+    Right who -> do
+      log'.note (setup.versus <> " is player " <> Text.pack (show who))
+      Challenge.challenging signed.token who setup >>= \case
+        Left  why     -> Left why <$ connection.stop
+        Right started -> do
+          log'.note
+            (  "challenge "
+            <> Text.pack (show started.challenge)
+            <> " made game "
+            <> Text.pack (show started.game)
+            )
+          Account.signingIn connection signed.account >>= \case
+            Left why -> Left why <$ connection.stop
+            Right () -> Ogs.joining log'
+                                    connection
+                                    signed.account.player
+                                    started.game
 
 -- | Stop looking, and let the connection go.
 --
@@ -166,15 +239,15 @@ giveUp connection seek = do
   connection.stop
 
 -- | Sign the connection in, ask for a game, and wait for one.
-pairing :: Account -> Socket -> Seek -> IO (Either Text Opponent)
-pairing account connection seek = Account.signingIn connection account >>= \case
+pairing :: Log -> Account -> Socket -> Seek -> IO (Either Text Opponent)
+pairing log' account connection seek = Account.signingIn connection account >>= \case
   Left  why -> pure (Left why)
   Right ()  -> connection.put (Seek.finding seek) >>= \case
     Left  why -> pure (Left why)
     Right ()  -> waited >>= \case
       Nothing           -> pure (Left "Nobody else was looking for that game.")
       Just (Left  why ) -> pure (Left why)
-      Just (Right game) -> Ogs.joining connection account.player game
+      Just (Right game) -> Ogs.joining log' connection account.player game
   where waited = Timeout.timeout (patience * 1000000) (waitingFor connection seek)
 
 -- | Wait for the game this looking is answered with.

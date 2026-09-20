@@ -32,6 +32,7 @@ import           Data.Aeson                     ( Value
 import           Data.Foldable                  ( traverse_ )
 import           Data.IORef
 import           Data.Text                      ( Text )
+import qualified Data.Text                     as Text
 import           Pipes                          ( Producer
                                                 , for
                                                 , yield
@@ -40,6 +41,7 @@ import           Pipes                          ( Producer
 import           Go.Types                       ( Color(..) )
 import           Stones.Ogs.Frame               ( Packet(..) )
 import           Stones.Ogs.Protocol
+import           Stones.Log                     ( Log(..) )
 import           Stones.Ogs.Socket              ( Socket(..) )
 import           Stones.Opponent
 
@@ -47,8 +49,8 @@ import           Stones.Opponent
 --
 -- The connection is not this game's to close, because the next game
 -- is on the same one. Leaving says so and leaves the connection up.
-joining :: Socket -> Int -> Int -> IO (Either Text Opponent)
-joining connection player game = do
+joining :: Log -> Socket -> Int -> Int -> IO (Either Text Opponent)
+joining log' connection player game = do
   joined <- connection.put (connecting game)
   case joined of
     Left  why -> pure (Left why)
@@ -65,7 +67,7 @@ joining connection player game = do
         (Right Opponent
           { name  = "online-go.com"
           , tell  = telling connection table
-          , hear  = hearing connection table
+          , hear  = hearing log' connection table
           , leave = void (connection.put (leaving game))
           , talks = True
           }
@@ -95,15 +97,19 @@ telling connection table told = do
   where asEvent (name, body) = Event name [body] Nothing
 
 -- | Everything about this game that arrives.
-hearing :: Socket -> IORef Table -> Producer Heard IO ()
-hearing connection table = for connection.heard $ \case
+hearing :: Log -> Socket -> IORef Table -> Producer Heard IO ()
+hearing log' connection table = for connection.heard $ \case
   -- The connection has gone, and nothing follows it.
   Left  why                 -> yield (Lost why)
   Right (Event name args _) -> do
     where' <- liftIO (readIORef table)
     case incoming where' name args of
-      Nothing    -> pure ()
+      -- Either it is about another game, or it is something this
+      -- program has nothing to do with. Which of the two it is is
+      -- worth writing down: the second is a gap, and the first is not.
+      Nothing -> liftIO (log'.note ("    nothing to do with " <> name))
       Just heard -> do
+        liftIO (log'.note ("    " <> name <> " -> " <> Text.pack (show heard)))
         liftIO (following table args heard)
         yield heard
   -- Everything the connection needs for itself.

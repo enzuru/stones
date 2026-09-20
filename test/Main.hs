@@ -27,6 +27,7 @@ import qualified DrawTest
 import qualified FakeEngineTest
 import qualified ChallengeTest
 import qualified ClockTest
+import qualified LogTest
 import qualified OnlineTest
 import qualified FrameTest
 import qualified LoginTest
@@ -56,6 +57,7 @@ main = do
     , FrameTest.tests
     , ChallengeTest.tests
     , ClockTest.tests
+    , LogTest.tests
     , OnlineTest.tests
     , LoginTest.tests
     , SocketTest.tests

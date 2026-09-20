@@ -43,6 +43,7 @@ import           Go.Types
 import           Stones.Ogs.Account             ( Account(..) )
 import           Stones.Ogs.Frame               ( Packet(..) )
 import           Stones.Ogs.Socket              ( Socket(..) )
+import           Stones.Log                     ( quiet )
 import           Stones.Online
 import           Stones.Opponent
 import           Stones.Setup                   ( Against(..)
@@ -54,6 +55,10 @@ import           Stones.Setup                   ( Against(..)
 me :: Account
 me = Account { player = 77, username = "hikaru", jwt = "j", chatAuth = "c" }
 
+-- | The same, signed in, which is what the signing in answers with.
+signedInAsMe :: Signed
+signedInAsMe = Signed { account = me, token = "a token" }
+
 -- | A game to ask for.
 wanted :: Setup
 wanted = Setup { against  = Online
@@ -61,6 +66,7 @@ wanted = Setup { against  = Online
                , human    = Black
                , strength = Fierce
                , handicap = 0
+               , versus   = ""
                }
 
 -- | A connection that goes nowhere, and the handles to drive it.
@@ -124,8 +130,8 @@ prop_aGameCannotBeAskedForBeforeAnybodyIsSignedIn =
     -- Nothing is dialled either. A connection opened before there is
     -- anybody to be would be a connection with nothing to say.
     dials <- evalIO (newIORef (0 :: Int))
-    asked <- evalIO . withOnlineWith
-      Reaching { signIn = pure (Right me)
+    asked <- evalIO . withOnlineWith quiet
+      Reaching { signIn = pure (Right signedInAsMe)
                , dial   = modifyIORef' dials (+ 1) >> pure (Left "not dialled")
                }
       $ \source -> source.open wanted
@@ -137,13 +143,13 @@ prop_aGameCannotBeAskedForBeforeAnybodyIsSignedIn =
 
 prop_signingInSaysWhoCameBack :: Property
 prop_signingInSaysWhoCameBack = withTests 1 . property $ do
-  name <- evalIO . withOnlineWith
-    Reaching { signIn = pure (Right me), dial = pure (Left "not dialled") }
+  name <- evalIO . withOnlineWith quiet
+    Reaching { signIn = pure (Right signedInAsMe), dial = pure (Left "not dialled") }
     $ \source -> source.enter
   name === Right "hikaru"
   -- And a refusal is passed on as it stands, rather than being turned
   -- into something about this program.
-  refused <- evalIO . withOnlineWith
+  refused <- evalIO . withOnlineWith quiet
     Reaching { signIn = pure (Left "the browser never came back")
              , dial   = pure (Left "not dialled")
              }
@@ -153,8 +159,8 @@ prop_signingInSaysWhoCameBack = withTests 1 . property $ do
 prop_aGameIsSignedInForAndThenLookedFor :: Property
 prop_aGameIsSignedInForAndThenLookedFor = withTests 1 . property $ do
   it     <- evalIO fake
-  played <- evalIO . withOnlineWith
-    Reaching { signIn = pure (Right me), dial = pure (Right it.connection) }
+  played <- evalIO . withOnlineWith quiet
+    Reaching { signIn = pure (Right signedInAsMe), dial = pure (Right it.connection) }
     $ \source -> do
         _ <- source.enter
         -- The looking is answered as soon as it goes out, which is
@@ -176,14 +182,34 @@ prop_aGameIsSignedInForAndThenLookedFor = withTests 1 . property $ do
   said <- evalIO it.sent
   namesOf said === ["authenticate", "automatch/find_match", "game/connect"]
 
+prop_namingSomebodyAsksThemRatherThanLookingForAnybody :: Property
+prop_namingSomebodyAsksThemRatherThanLookingForAnybody =
+  withTests 1 . property $ do
+    -- Asking a named player is a call to the website, so with no
+    -- network the call fails and nothing goes over the connection.
+    -- What matters is which of the two paths was taken: a looking
+    -- would have gone out first.
+    it    <- evalIO fake
+    _     <- evalIO . withOnlineWith quiet
+      Reaching { signIn = pure (Right signedInAsMe)
+               , dial   = pure (Right it.connection)
+               }
+      $ \source -> do
+          _ <- source.enter
+          timeout 20000000 (source.open wanted { versus = "a-bot" })
+    said  <- evalIO it.sent
+    -- No looking, because nobody was being looked for.
+    assert (notElem "automatch/find_match" (namesOf said))
+    assert (notElem "automatch/cancel" (namesOf said))
+
 prop_aLookingThatComesToNothingIsCalledOffAndTheConnectionClosed :: Property
 prop_aLookingThatComesToNothingIsCalledOffAndTheConnectionClosed =
   withTests 1 . property $ do
     it     <- evalIO fake
     -- Nothing answers, and the connection goes away underneath it,
     -- which is what a server restarting looks like.
-    asked  <- evalIO . withOnlineWith
-      Reaching { signIn = pure (Right me), dial = pure (Right it.connection) }
+    asked  <- evalIO . withOnlineWith quiet
+      Reaching { signIn = pure (Right signedInAsMe), dial = pure (Right it.connection) }
       $ \source -> do
           _ <- source.enter
           done <- forkIO (it.connection.stop)
@@ -202,8 +228,8 @@ prop_everyConnectionOpenedIsClosedWhenTheWindowGoes :: Property
 prop_everyConnectionOpenedIsClosedWhenTheWindowGoes =
   withTests 1 . property $ do
     it <- evalIO fake
-    _  <- evalIO . withOnlineWith
-      Reaching { signIn = pure (Right me), dial = pure (Right it.connection) }
+    _  <- evalIO . withOnlineWith quiet
+      Reaching { signIn = pure (Right signedInAsMe), dial = pure (Right it.connection) }
       $ \source -> do
           _ <- source.enter
           timeout 200000 (source.open wanted)

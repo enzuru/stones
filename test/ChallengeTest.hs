@@ -36,7 +36,7 @@ import           Stones.Setup                   ( Against(..)
 -- | A game to ask for.
 wanted :: Setup
 wanted =
-  Setup { against = Computer, size = 9, human = Black, strength = Gentle, handicap = 0 }
+  Setup { against = Computer, size = 9, human = Black, strength = Gentle, handicap = 0, versus = "" }
 
 -- | A field of what is asked for.
 askedFor :: Setup -> Text -> Maybe Value

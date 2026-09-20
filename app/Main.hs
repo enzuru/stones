@@ -24,6 +24,7 @@ import qualified Data.List                     as List
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import qualified Data.Text.IO                  as Text
+import           Control.Applicative            ( optional )
 import           Options.Applicative
 import           System.Directory               ( doesDirectoryExist
                                                 , doesFileExist
@@ -50,6 +51,7 @@ import           Stones.Setup                   ( Against(..)
                                                 )
 import           Stones.Opponent                ( choosing )
 import qualified Stones.Opponent.GnuGo         as GnuGo
+import qualified Stones.Log                    as Log
 import qualified Stones.Online                 as Online
 
 -- | What the command line asked for.
@@ -61,6 +63,9 @@ import qualified Stones.Online                 as Online
 data Options = Options
   { opening :: Setup
   , program :: FilePath
+  , logTo   :: Maybe FilePath
+    -- ^ Where to write down what was said to online-go.com, if
+    -- anywhere. Nothing is written unless somebody asked.
   }
 
 -- | The command line, as a parser of it.
@@ -108,6 +113,17 @@ options =
                    \board takes fewer, and the engine says so if it will \
                    \not place them."
               )
+        <*> strOption
+              (  long "versus"
+              <> metavar "NAME"
+              <> value ""
+              <> help
+                   "Who to ask for a game at online-go.com, by name. \
+                   \Nothing means whoever else is looking for the same \
+                   \game, which is how a person ends up on the other \
+                   \side. Naming one is how a program is played against \
+                   \on purpose."
+              )
         )
     <*> strOption
           (  long "engine"
@@ -115,6 +131,16 @@ options =
           <> value "gnugo"
           <> showDefault
           <> help "The GNU Go program to run"
+          )
+    <*> optional
+          (strOption
+            (  long "log"
+            <> metavar "PATH"
+            <> help
+                 "Write down everything said to online-go.com, with the \
+                 \tokens taken out. For finding out what the server \
+                 \actually says."
+            )
           )
   where names = List.intercalate ", " (map (Text.unpack . describeStrength) strengths)
 
@@ -192,8 +218,9 @@ main = do
       -- Both places a game can come from, opened for as long as the
       -- window is. Neither starts anything until somebody asks: no
       -- engine runs and nothing is signed in to.
-      GnuGo.withGnuGo chosen.program $ \computer ->
-        Online.withOnline Online.browsing $ \online -> do
+      GnuGo.withGnuGo chosen.program $ \computer -> do
+        log' <- maybe (pure Log.quiet) Log.toFile chosen.logTo
+        Online.withOnline log' Online.browsing $ \online -> do
           let opponents = choosing computer online
           application <- Adw.applicationNew (Just identifier)
                                             [Gio.ApplicationFlagsDefaultFlags]

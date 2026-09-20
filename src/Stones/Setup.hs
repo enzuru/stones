@@ -146,6 +146,13 @@ data Setup = Setup
     -- ^ How hard the opponent is asked to try.
   , handicap :: Int
     -- ^ How many stones the player starts with down, or none.
+  , versus   :: Text
+    -- ^ Who to ask for a game, by name, or nobody in particular.
+    --
+    -- Only a game on a server has one. Empty means whoever else is
+    -- looking for the same game, which is what most people want.
+    -- Naming somebody is how a program is played against on purpose,
+    -- which is what this program is tried out against.
   }
   deriving (Eq, Show)
 
@@ -170,6 +177,7 @@ defaultSetup = Setup { against  = Computer
                      , human    = Black
                      , strength = Fierce
                      , handicap = 0
+                     , versus   = ""
                      }
 
 -- | The boards on offer. Every board a player is likely to want, and
@@ -184,6 +192,7 @@ data SetupEvent
   | ChoseSide Color
   | ChoseStrength Strength
   | ChoseHandicap Int
+  | ChoseVersus Text
   | StartPressed
   | SignInPressed
     -- ^ Sign in to online-go.com. This is about the window rather than
@@ -200,6 +209,7 @@ chose setup = \case
   ChoseSide side      -> setup { human = side }
   ChoseStrength which -> setup { strength = which }
   ChoseHandicap n     -> setup { handicap = n }
+  ChoseVersus who     -> setup { versus = Text.strip who }
   StartPressed        -> setup
   SignInPressed       -> setup
 
@@ -212,7 +222,8 @@ describeSetup setup = Text.intercalate "  \183  " (board : rest)
   -- the colour and the opponent on the other side, so naming either
   -- here would be saying something this program does not know.
   rest  = case setup.against of
-    Online   -> [describePlace Online]
+    Online | Text.null setup.versus -> [describePlace Online]
+           | otherwise              -> [describePlace Online, setup.versus]
     Computer -> [colorWord setup.human, describeStrength setup.strength] <> stones
   stones | setup.handicap < 2 = []
          | otherwise = [describeHandicap setup.handicap <> " stones"]
@@ -271,7 +282,7 @@ launchPage signing setup = bin
   -- The page asks for what that place can answer, and for nothing
   -- else. A row that did nothing would be worse than no row at all.
   rows = case setup.against of
-    Online   -> [where', board, account]
+    Online   -> [where', board, versus', account]
     Computer ->
       [ where'
       , board
@@ -288,6 +299,17 @@ launchPage signing setup = bin
                setup.handicap
                ChoseHandicap
       ]
+  -- The name is not read back out of what was chosen, so that what is
+  -- typed is not taken away and put back under the cursor while
+  -- somebody is still typing it. What they typed is what it says, and
+  -- the page keeps up rather than the other way round.
+  versus' = widget
+    Adw.EntryRow
+    [ #title := "Opponent"
+    , #tooltipText
+      := "A name to play against, or nothing for whoever else is looking"
+    , onM #changed (fmap ChoseVersus . Gtk.editableGetText)
+    ]
   -- Signing in opens a browser, so it is a button rather than
   -- something that happens on its own when the place is chosen.
   account = container

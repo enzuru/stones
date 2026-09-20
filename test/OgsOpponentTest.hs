@@ -38,6 +38,7 @@ import           System.Timeout                 ( timeout )
 
 import           Go.Types
 import           Stones.Ogs.Frame               ( Packet(..) )
+import           Stones.Log                     ( quiet )
 import           Stones.Ogs.Socket              ( Socket(..) )
 import           Stones.Opponent
 import           Stones.Opponent.Ogs
@@ -76,7 +77,7 @@ game = 1234
 joined :: IO (Fake, Opponent)
 joined = do
   it     <- fake True
-  answer <- joining it.connection 77 game
+  answer <- joining quiet it.connection 77 game
   case answer of
     Left  why -> error (show why)
     Right them -> pure (it, them)
@@ -151,7 +152,7 @@ prop_whatHasNobodyToSayItToCountsAsSaid = withTests 1 . property $ do
 prop_aConnectionThatWillNotTakeItIsARefusal :: Property
 prop_aConnectionThatWillNotTakeItIsARefusal = withTests 1 . property $ do
   it     <- evalIO (fake False)
-  answer <- evalIO (joining it.connection 77 game)
+  answer <- evalIO (joining quiet it.connection 77 game)
   case answer of
     Left why -> why === "the connection has closed"
     Right _  -> annotate "it joined a game on a closed connection" >> failure
