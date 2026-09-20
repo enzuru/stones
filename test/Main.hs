@@ -20,6 +20,7 @@ import           Hedgehog                       ( checkParallel
                                                 )
 import           System.Exit                    ( exitFailure )
 
+import qualified AccountTest
 import qualified AppTest
 import qualified BoardTest
 import qualified DrawTest
@@ -53,6 +54,7 @@ main = do
     , SocketTest.tests
     , ProtocolTest.tests
     , ProtocolMessageTest.tests
+    , AccountTest.tests
     , OgsOpponentTest.tests
     , SetupTest.tests
     , SessionTest.tests

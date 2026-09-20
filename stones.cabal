@@ -41,6 +41,7 @@ library
                     , Go.Vertex
                     , Stones.App
                     , Stones.Ogs
+                    , Stones.Ogs.Account
                     , Stones.Ogs.Frame
                     , Stones.Ogs.Login
                     , Stones.Ogs.Protocol
@@ -112,7 +113,8 @@ test-suite stones-tests
   hs-source-dirs:     test
   main-is:            Main.hs
   default-language:   Haskell2010
-  other-modules:      AppTest
+  other-modules:      AccountTest
+                    , AppTest
                     , BoardTest
                     , DrawTest
                     , FakeEngineTest
