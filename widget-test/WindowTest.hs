@@ -317,6 +317,91 @@ rowTitlesOf state = built state $ \widget' -> do
   rows <- descendantsOf Adw.ActionRow widget'
   traverse Adw.preferencesRowGetTitle rows
 
+prop_startingAGameInOneTabLeavesTheOtherTabsAlone :: Property
+prop_startingAGameInOneTabLeavesTheOtherTabsAlone =
+  withTests 1 . property $ do
+    -- Nothing to do with resuming: what a tab holds changes shape
+    -- twice in an ordinary game, once when the page becomes a board
+    -- and once when the board grows a pane beside it, and either one
+    -- used to take the tab out from under whoever was looking at it.
+    let second  = next oneGame NewTabPressed
+        started = next second (InSetup 2 StartPressed)
+        arrived = next started (TabOpened 2 (Right silent))
+    chosen <- evalIO (showingIn [oneGame, second, started, arrived])
+    chosen === Just "nobody"
+
+prop_openingAGameAlreadyGoingShowsThatTab :: Property
+prop_openingAGameAlreadyGoingShowsThatTab = withTests 1 . property $ do
+  -- Somebody who pressed Open meant to look at that game, not to go
+  -- on staring at the page they pressed it on.
+  let one = Ongoing { with  = "lenzuru"
+                    , about = asking { against = Online, versus = "lenzuru" }
+                    , game  = 90884965
+                    }
+      listed = next (next onlinePage (SignedInAs (Right "enzuru")))
+                    (GamesFound (Right [one]))
+      opened = next listed (InSetup 1 (ResumePressed one))
+  -- Through every render the window makes of it, because a selection
+  -- is a thing said once and a render that said nothing would leave it
+  -- wherever it drifted to.
+  let arrived = next opened (TabOpened 2 (Right silent))
+      played  = next arrived (InTab 2 (Clicked (Coord 3 3)))
+  chosen <- evalIO (showingIn [listed, opened, arrived, played])
+  -- The game that was opened, named after who it is against once its
+  -- opponent has arrived.
+  chosen === Just "nobody"
+
+-- | Build the first of these, patch it with each of the rest in turn,
+-- and say what the tab showing at the end is called.
+showingIn :: [State] -> IO (Maybe Text)
+showingIn []             = pure Nothing
+showingIn (first : rest) = do
+  made  <- runUI (create (view' first))
+  ended <- go made first rest
+  settle
+  runUI $ do
+    views <- descendantsOf Adw.TabView =<< widgetOf ended
+    case views of
+      [view] -> do
+        page <- Adw.tabViewGetSelectedPage view
+        traverse Adw.tabPageGetTitle page
+      _ -> pure Nothing
+ where
+  go made _ [] = pure made
+  go made before (next' : after) = do
+    patched <- runUI (apply made (view' before) (view' next'))
+    settle
+    go patched next' after
+
+prop_typingANameDoesNotTakeItAway :: Property
+prop_typingANameDoesNotTakeItAway = withTests 1 . property $ do
+  -- What the row holds is written back to it on the render after every
+  -- keystroke. Writing text into an entry moves the cursor, so a row
+  -- written back to on every keystroke is a row somebody types into
+  -- backwards.
+  where' <- evalIO $ do
+    made <- runUI (create (view' onlinePage))
+    -- A keystroke: the row has the letter in it and the cursor after
+    -- it, and the page has not heard yet.
+    runUI $ do
+      rows <- descendantsOf Adw.EntryRow =<< widgetOf made
+      case rows of
+        row : _ -> do
+          Gtk.editableSetText row "amy"
+          Gtk.editableSetPosition row 3
+        [] -> pure ()
+    -- And now it has, so the next render says what the row already
+    -- says.
+    let heard = next onlinePage (InSetup 1 (ChoseVersus "amy"))
+    patched <- runUI (apply made (view' onlinePage) (view' heard))
+    runUI $ do
+      rows <- descendantsOf Adw.EntryRow =<< widgetOf patched
+      case rows of
+        row : _ -> Just <$> Gtk.editableGetPosition row
+        []      -> pure Nothing
+  -- The cursor is where the typist left it, after the third letter.
+  where' === Just 3
+
 prop_thePageSaysWhetherAnybodyIsSignedIn :: Property
 prop_thePageSaysWhetherAnybodyIsSignedIn = withTests 1 . property $ do
   -- The line is on the row rather than anywhere else, because the row

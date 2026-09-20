@@ -512,17 +512,20 @@ launchPage signing already setup = bin
                ChoseHandicap
       ]
   -- The row shows what the page holds, and the page holds what was
-  -- typed, so the two never disagree. A row that showed nothing while
-  -- the page held a name would be a row that lied: the game would be
-  -- asked for against somebody the player could not see.
+  -- typed. A row that showed nothing while the page held a name would
+  -- be a row that lied: the game would be asked for against somebody
+  -- the player could not see.
   --
-  -- It does not fight the typing, because the two are already the same
-  -- by the time the next render comes round, and a value that has not
-  -- changed is not written back.
+  -- Held rather than set. What the page holds is written back to the
+  -- row on the render after every keystroke, and writing text into an
+  -- entry puts the cursor at the front of it, so a row that were set
+  -- on every keystroke is a row somebody types into backwards. Holding
+  -- it reads the row first and writes nothing when the two already
+  -- agree, which after a keystroke they do.
   versus' = widget
     Adw.EntryRow
     [ #title := "Opponent"
-    , #text := setup.versus
+    , holding #text setup.versus
     , #tooltipText
       := "A name to play against, or nothing for whoever else is looking"
     , onM #changed (fmap ChoseVersus . Gtk.editableGetText)

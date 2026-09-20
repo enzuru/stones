@@ -865,13 +865,33 @@ gameTabs state = tabView
       -- tabs apart at a glance. A number never did: the tabs are in a
       -- row and already look like one, two, three.
     , tabTitle = titleOf session
-    , tabChild = board state tab session
+    , tabChild = heldInATab (board state tab session)
     }
   tabFor (tab, Choosing setup) = Tab
     { tabKey   = keyOf tab
     , tabTitle = "New Game"
-    , tabChild = InSetup tab <$> launchPage state.signing state.already setup
+    , tabChild = heldInATab
+                   (InSetup tab <$> launchPage state.signing state.already setup)
     }
+
+-- | What a tab holds, under a wrapper that never changes shape.
+--
+-- A page holds the widget it was made with, so a widget that has to be
+-- replaced rather than patched is a page that has to be made again,
+-- and a page made again is not the page that was selected: the view
+-- falls back to a neighbour and the tab somebody was looking at is not
+-- the tab they end up on.
+--
+-- What a tab holds does change shape. A page that asks what to play
+-- becomes a board, and a board grows a pane beside it the moment there
+-- is somebody to talk to. So the thing the page is given is a box that
+-- is always the same box, and everything that changes happens inside
+-- it, where a replacement is an ordinary one.
+heldInATab :: Widget Event -> Widget Event
+heldInATab inside = container
+  Gtk.Box
+  [#orientation := Gtk.OrientationVertical]
+  [BoxChild defaultBoxChildProperties { expand = True, fill = True } inside]
 
 -- | What a tab holding a game is called.
 --
