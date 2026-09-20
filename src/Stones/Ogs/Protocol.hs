@@ -28,6 +28,7 @@ module Stones.Ogs.Protocol
   , timeFrom
   , outgoing
   , incoming
+  , refusalOf
   )
 where
 
@@ -344,6 +345,31 @@ outgoing table = \case
   -- Nobody to say these to.
   Asked    -> []
   Counting -> []
+
+-- | Why the other side would not play this game, if this is that.
+--
+-- A refusal does not arrive as an event about the game. It arrives as
+-- a notice to the player, because it is news about a game that is now
+-- never going to exist: nothing more is said about it, and nothing
+-- more ever will be.
+--
+-- The server's own wording is passed on. It is written for a person to
+-- read, and it says what was wrong with the game that was asked for,
+-- which is more than this program knows.
+refusalOf :: Int -> Text -> [Value] -> Maybe Text
+refusalOf game name arguments = do
+  body <- case (name, arguments) of
+    ("notification", first : _) -> Just first
+    _                           -> Nothing
+  kind  <- fieldOf "type" body >>= asString
+  about <- fieldOf "game_id" body >>= asWhole
+  if kind /= "gameOfferRejected" || about /= game
+    then Nothing
+    else Just
+      (maybe "The other side would not play that game."
+             id
+             (fieldOf "message" body >>= asString)
+      )
 
 -- | What to say to the game when an event arrives, if anything.
 --

@@ -73,14 +73,53 @@ fake taking = do
 game :: Int
 game = 1234
 
--- | Join it, on a connection that takes what it is given.
-joined :: IO (Fake, Opponent)
-joined = do
-  it     <- fake True
+-- | What the server says about a fresh even game when it is joined.
+evenGame :: Packet
+evenGame = Event
+  "game/1234/gamedata"
+  [ object
+      [ "width" .= (9 :: Int)
+      , "initial_player" .= ("black" :: Text)
+      , "black_player_id" .= (77 :: Int)
+      , "white_player_id" .= (88 :: Int)
+      , "moves" .= ([] :: [Value])
+      ]
+  ]
+  Nothing
+
+-- | What the server sent when a bot was asked for a board it does not
+-- play on, word for word.
+refusal :: Packet
+refusal = Event
+  "notification"
+  [ object
+      [ "type" .= ("gameOfferRejected" :: Text)
+      , "game_id" .= game
+      , "message"
+        .= ("This bot only plays on these board sizes: 9x9, 13x13, 19x19." :: Text)
+      , "rejection_details"
+        .= object ["rejection_code" .= ("board_size_not_allowed" :: Text)]
+      ]
+  ]
+  Nothing
+
+-- | Join it, on a connection that takes what it is given, with the
+-- server already saying where the game stands.
+--
+-- It has to be waiting there before the joining starts, because
+-- nothing is handed back until it arrives.
+joinedWith :: Packet -> IO (Fake, Opponent)
+joinedWith standing = do
+  it <- fake True
+  it.arrive (Right standing)
   answer <- joining quiet it.connection 77 game
   case answer of
-    Left  why -> error (show why)
+    Left  why  -> error (show why)
     Right them -> pure (it, them)
+
+-- | The same, in a game that has just started.
+joined :: IO (Fake, Opponent)
+joined = joinedWith evenGame
 
 -- | A move as it arrives from the server.
 moveEvent :: Int -> Int -> Int -> Packet
@@ -98,6 +137,14 @@ moveEvent number x y = Event
 heardFrom :: Opponent -> Int -> IO (Maybe [Heard])
 heardFrom them count =
   timeout 3000000 (Pipes.toListM (them.hear >-> Pipes.take count))
+
+-- | The same, past the one that says where the game started.
+--
+-- Where it stands is read off the stream before the game is handed
+-- back, and put at the front of what the game hears, so it is always
+-- the first thing there.
+heardAfter :: Opponent -> Int -> IO (Maybe [Heard])
+heardAfter them count = fmap (drop 1) <$> heardFrom them (count + 1)
 
 -- | The payload of an event that was sent.
 bodyOf :: Packet -> Maybe Value
@@ -164,7 +211,7 @@ prop_aMoveThatArrivesComesBackAsOne = withTests 1 . property $ do
   -- first move of the game is move number one.
   evalIO (it.arrive (Right (moveEvent 1 3 3)))
   evalIO (it.arrive (Right (moveEvent 2 15 3)))
-  arrived <- evalIO (heardFrom them 2)
+  arrived <- evalIO (heardAfter them 2)
   arrived
     === Just
           [ Played Black (Play (Coord 3 3))
@@ -193,7 +240,7 @@ prop_whatIsNotAboutThisGameIsNotHeard = withTests 1 . property $ do
   -- all.
   evalIO (it.arrive (Right Pong))
   evalIO (it.arrive (Right (moveEvent 1 3 3)))
-  arrived <- evalIO (heardFrom them 1)
+  arrived <- evalIO (heardAfter them 1)
   arrived === Just [Played Black (Play (Coord 3 3))]
 
 prop_theConnectionGoingEndsWhatIsHeard :: Property
@@ -204,7 +251,7 @@ prop_theConnectionGoingEndsWhatIsHeard = withTests 1 . property $ do
   evalIO (it.arrive (Left "the connection closed"))
   evalIO it.finish
   arrived <- evalIO (timeout 3000000 (Pipes.toListM them.hear))
-  arrived === Just [Lost "the connection closed"]
+  fmap (drop 1) arrived === Just [Lost "the connection closed"]
 
 prop_theCountOfMovesFollowsTheBoard :: Property
 prop_theCountOfMovesFollowsTheBoard = withTests 1 . property $ do
@@ -216,7 +263,7 @@ prop_theCountOfMovesFollowsTheBoard = withTests 1 . property $ do
   -- first move of the game is move number one.
   evalIO (it.arrive (Right (moveEvent 1 3 3)))
   evalIO (it.arrive (Right (moveEvent 2 15 3)))
-  _ <- evalIO (heardFrom them 2)
+  _ <- evalIO (heardAfter them 2)
   _ <- evalIO (them.tell (Said "good game"))
   packets <- evalIO it.sent
   map bodyOf (drop 1 packets)
@@ -254,8 +301,7 @@ prop_aHandicapGameGetsItsColoursTheRightWayRound =
     -- Black's stones are down before anybody has moved, so the first
     -- move is White's. Reading the count without that would have every
     -- colour in the game the wrong way round.
-    (it, them) <- evalIO joined
-    evalIO (it.arrive (Right handicapGame))
+    (it, them) <- evalIO (joinedWith handicapGame)
     evalIO (it.arrive (Right (moveEvent 1 3 3)))
     arrived <- evalIO (heardFrom them 2)
     arrived
@@ -273,27 +319,20 @@ prop_howFarAlongTheGameIsComesFromTheServerToo =
   withTests 1 . property $ do
     -- A game that was left and come back to is already somewhere, and
     -- anything said about it carries where.
-    (it, them) <- evalIO joined
-    evalIO
-      (it.arrive
-        (Right
-          (Event
-            "game/1234/gamedata"
-            [ object
-                [ "width" .= (9 :: Int)
-                , "initial_player" .= ("black" :: Text)
-                , "black_player_id" .= (77 :: Int)
-                , "white_player_id" .= (88 :: Int)
-                , "moves" .= [toJSON [3, 3, 0 :: Int], toJSON [5, 5, 0 :: Int]]
-                ]
-            ]
-            Nothing
-          )
-        )
-      )
-    _       <- evalIO (heardFrom them 1)
-    _       <- evalIO (them.tell (Said "hello"))
-    packets <- evalIO it.sent
+    let sofar = Event
+          "game/1234/gamedata"
+          [ object
+              [ "width" .= (9 :: Int)
+              , "initial_player" .= ("black" :: Text)
+              , "black_player_id" .= (77 :: Int)
+              , "white_player_id" .= (88 :: Int)
+              , "moves" .= [toJSON [3, 3, 0 :: Int], toJSON [5, 5, 0 :: Int]]
+              ]
+          ]
+          Nothing
+    (it, them) <- evalIO (joinedWith sofar)
+    _          <- evalIO (them.tell (Said "hello"))
+    packets    <- evalIO it.sent
     map bodyOf (drop 1 packets)
       === [ Just
               (object
@@ -304,6 +343,36 @@ prop_howFarAlongTheGameIsComesFromTheServerToo =
                 ]
               )
           ]
+
+prop_aGameTheOtherSideWillNotPlaySaysWhy :: Property
+prop_aGameTheOtherSideWillNotPlaySaysWhy = withTests 1 . property $ do
+  -- Word for word what online-go.com sent when a bot was asked for a
+  -- board it does not play on. It arrives as a notice to the player
+  -- rather than as anything about the game, because the game is now
+  -- never going to exist, and the server's own wording says what was
+  -- wrong with it.
+  it     <- evalIO (fake True)
+  evalIO (it.arrive (Right refusal))
+  answer <- evalIO (joining quiet it.connection 77 game)
+  case answer of
+    Right _ -> annotate "it handed back a game that was refused" >> failure
+    Left why ->
+      why === "This bot only plays on these board sizes: 9x9, 13x13, 19x19."
+
+prop_nothingIsHandedBackUntilTheServerSaysWhereTheGameStands :: Property
+prop_nothingIsHandedBackUntilTheServerSaysWhereTheGameStands =
+  withTests 1 . property $ do
+    -- The board here is a guess until it does. A window handed a game
+    -- to play on a guess lets somebody move on it, and the moves go to
+    -- a game that might not even exist.
+    it     <- evalIO (fake True)
+    answer <- evalIO (timeout 500000 (joining quiet it.connection 77 game))
+    case answer of
+      Just _  -> annotate "it handed back a game nobody had described" >> failure
+      Nothing -> success
+    -- And it did ask, so what it is waiting for is on its way.
+    packets <- evalIO it.sent
+    namesOf packets === ["game/connect"]
 
 tests :: Group
 tests = $$(discover)

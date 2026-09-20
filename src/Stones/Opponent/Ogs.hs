@@ -35,8 +35,10 @@ import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import           Pipes                          ( Producer
                                                 , for
+                                                , next
                                                 , yield
                                                 )
+import qualified System.Timeout                as Timeout
 
 import           Go.Types                       ( Color(..) )
 import           Stones.Ogs.Frame               ( Packet(..) )
@@ -56,22 +58,73 @@ joining log' connection player game = do
     Left  why -> pure (Left why)
     Right ()  -> do
       -- Where the game is, as far as this side knows. The count and
-      -- who opened are both guesses until the server says, which it
-      -- does before anything else happens.
+      -- who opened are both guesses until the server says.
       table <- newIORef Table { identifier = game
                               , played     = 0
                               , opens      = Black
                               , me         = player
                               }
-      pure
-        (Right Opponent
+      -- Nothing is handed back until the server has said where the
+      -- game stands, the same way a game against a program on this
+      -- machine is set up before anybody is given one to play. The
+      -- board here is a guess until then, and a window that let
+      -- somebody move on a guess would be sending moves to a game
+      -- that might not even exist.
+      opened <- beginning log' connection table game
+      pure $ case opened of
+        Left  why   -> Left why
+        Right began -> Right Opponent
           { name  = "online-go.com"
           , tell  = telling connection table
-          , hear  = hearing log' connection table
+            -- Where it stands was read off the stream to get here, so
+            -- it is put back at the front of what the game hears.
+          , hear  = yield began >> hearing log' connection table
           , leave = void (connection.put (leaving game))
           , talks = True
           }
-        )
+
+-- | How long to wait for the server to say where a game stands.
+--
+-- A game asked for by name waits on the other side accepting it, which
+-- a program does at once and a person takes as long as they like over.
+-- Long enough for either, and short enough that a tab does not sit on
+-- "Starting" forever with nothing coming.
+patience :: Int
+patience = 120 * 1000000
+
+-- | Wait for the server to say where the game stands.
+--
+-- Three ways out. It says, and the game can be played. It says the
+-- other side would not play this game, which is news that arrives as a
+-- notice rather than as anything about the game, because the game is
+-- now never going to exist. Or nothing comes at all.
+--
+-- What arrives before it and is not either of those is dropped. Only
+-- the server's own housekeeping comes that early, and the game has not
+-- started yet, so there is nothing yet for anything to be about.
+beginning :: Log -> Socket -> IORef Table -> Int -> IO (Either Text Heard)
+beginning log' connection table game =
+  Timeout.timeout patience (go connection.heard) >>= \case
+    Nothing     -> pure (Left "online-go.com never said where the game stands.")
+    Just answer -> pure answer
+ where
+  go stream = next stream >>= \case
+    Left  ()                   -> pure (Left gone)
+    Right (Left why    , _   ) -> pure (Left why)
+    Right (Right packet, rest) -> case packet of
+      Event name arguments _ -> do
+        where' <- readIORef table
+        case incoming where' name arguments of
+          Just began@(Began _) -> do
+            log'.note ("    " <> name <> " -> " <> Text.pack (show began))
+            following table arguments began
+            pure (Right began)
+          Just (Lost why) -> pure (Left why)
+          _               -> case refusalOf game name arguments of
+            Just why -> Left why <$ log'.note ("refused: " <> why)
+            Nothing  -> go rest
+      _ -> go rest
+  gone = "online-go.com went away before the game started."
 
 -- | Say that this program is watching this game, and would like what
 -- is said about it as well.

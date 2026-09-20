@@ -280,6 +280,30 @@ prop_whatThisProgramDoesNotActOnIsNothingToSay = withTests 1 . property $ do
   incoming table "game/1234/removed_stones" [object []] === Nothing
   incoming table "game/1234/move" [] === Nothing
 
+prop_aRefusalIsAboutOneGameAndIsThatGamesNews :: Property
+prop_aRefusalIsAboutOneGameAndIsThatGamesNews = withTests 1 . property $ do
+  -- A refusal does not arrive as an event about the game. It arrives
+  -- as a notice to the player, because it is news about a game that is
+  -- now never going to exist.
+  let rejected = object
+        [ "type" .= ("gameOfferRejected" :: Text)
+        , "game_id" .= (1234 :: Int)
+        , "message" .= ("This bot only plays on these board sizes." :: Text)
+        ]
+  refusalOf 1234 "notification" [rejected]
+    === Just "This bot only plays on these board sizes."
+  -- Somebody else's refusal is not this game's news.
+  refusalOf 9999 "notification" [rejected] === Nothing
+  -- Neither is any other kind of notice.
+  refusalOf 1234 "notification" [object ["game_id" .= (1234 :: Int)]] === Nothing
+  refusalOf 1234 "ui-push" [rejected] === Nothing
+  -- One with no wording still has to say something, because a tab that
+  -- stopped and would not say why is worse than a vague reason.
+  let bare = object
+        ["type" .= ("gameOfferRejected" :: Text), "game_id" .= (1234 :: Int)]
+  refusalOf 1234 "notification" [bare]
+    === Just "The other side would not play that game."
+
 -- * The counting at the end
 -----------------------------
 

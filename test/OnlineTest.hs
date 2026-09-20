@@ -31,6 +31,7 @@ import qualified Data.Aeson.KeyMap             as KeyMap
 import qualified Data.Aeson.Types              as Aeson
 import           Data.IORef
 import           Data.Text                      ( Text )
+import qualified Data.Text                     as Text
 import           Hedgehog
 import           Pipes.Concurrent               ( fromInput
                                                 , send
@@ -100,6 +101,21 @@ paired name game = Event
   [object ["uuid" .= name, "game_id" .= game]]
   Nothing
 
+-- | And what it says about the game itself, which is what a game waits
+-- for before anybody is given one to play.
+standing :: Int -> Packet
+standing game = Event
+  ("game/" <> Text.pack (show game) <> "/gamedata")
+  [ object
+      [ "width" .= (9 :: Int)
+      , "initial_player" .= ("black" :: Text)
+      , "black_player_id" .= (77 :: Int)
+      , "white_player_id" .= (88 :: Int)
+      , "moves" .= ([] :: [Value])
+      ]
+  ]
+  Nothing
+
 -- | The name of the looking that went out, out of what was sent.
 lookingIn :: [Packet] -> Maybe Text
 lookingIn packets = case
@@ -167,8 +183,10 @@ prop_aGameIsSignedInForAndThenLookedFor = withTests 1 . property $ do
         -- what the server does when somebody else is already waiting.
         answered <- forkIO $ let
           watch = it.sent >>= \packets -> case lookingIn packets of
-            Just name -> it.arrive (paired name 1234)
-            Nothing   -> watch
+            Just name -> do
+              it.arrive (paired name 1234)
+              it.arrive (standing 1234)
+            Nothing -> watch
           in watch
         _ <- pure answered
         timeout 5000000 (source.open wanted)
