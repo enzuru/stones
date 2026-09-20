@@ -77,9 +77,11 @@ instance FromJSON Started where
 -- Unranked, always. A rank belongs to the person who earned it, and
 -- these are games played by a program to find out whether it works.
 --
--- The clock is set long. The window shows one now, but nothing on the
--- page asks what it should be, so a game this program starts is given
--- a time nobody loses to by accident.
+-- An ordinary live clock. Nothing on the page asks what it should be,
+-- so it has to be a time nobody loses to by accident, and it also has
+-- to be one the other side will take: a program asked for a game
+-- usually has a limit on how long a game it will sit through, and a
+-- challenge over that limit is refused rather than played.
 asking :: Setup -> Value
 asking setup = object
   [ "challenger_color" .= colorName setup.human
@@ -100,8 +102,8 @@ asking setup = object
     , "time_control_parameters" .= object
       [ "system" .= ("byoyomi" :: Text)
       , "speed" .= ("live" :: Text)
-      , "main_time" .= (3600 :: Int)
-      , "period_time" .= (600 :: Int)
+      , "main_time" .= (600 :: Int)
+      , "period_time" .= (60 :: Int)
       , "periods" .= (5 :: Int)
       ]
     ]

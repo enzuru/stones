@@ -64,12 +64,12 @@ prop_aChallengeIsNeverRanked = property $ do
 prop_theClockIsLongBecauseNobodyWasAskedWhatItShouldBe :: Property
 prop_theClockIsLongBecauseNobodyWasAskedWhatItShouldBe =
   withTests 1 . property $ do
-    -- The window shows a clock now, but nothing on the page asks what
-    -- one should be, so a game this program starts is given a time
-    -- nobody loses to by accident.
+    -- A time nobody loses to by accident, and one the other side will
+    -- take: a program asked for a game usually has a limit on how long
+    -- a game it will sit through.
     let clock = ofGame wanted "time_control_parameters"
-    (clock >>= field "main_time") === Just (Number 3600)
-    (clock >>= field "period_time") === Just (Number 600)
+    (clock >>= field "main_time") === Just (Number 600)
+    (clock >>= field "period_time") === Just (Number 60)
     (clock >>= field "periods") === Just (Number 5)
 
 prop_theBoardAndTheStonesAreWhatWasChosen :: Property
