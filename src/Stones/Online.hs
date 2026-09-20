@@ -62,7 +62,9 @@ import           Stones.Log                     ( Log(..)
                                                 )
 import           Stones.Opponent
 import qualified Stones.Opponent.Ogs           as Ogs
-import           Stones.Setup                   ( Setup(..) )
+import           Stones.Setup                   ( Setup(..)
+                                                , versusOf
+                                                )
 
 -- | Everything here that reaches off this machine.
 --
@@ -176,7 +178,7 @@ finding log' outside who held setup = readIORef who >>= \case
         <> "x"
         <> Text.pack (show setup.size)
         <> " game against "
-        <> (if Text.null setup.versus then "anybody" else setup.versus)
+        <> (if Text.null (versusOf setup) then "anybody" else versusOf setup)
         )
       found <- if Text.null setup.versus
         then looking log' signed connection setup
@@ -208,10 +210,10 @@ looking log' signed connection setup = do
 -- itself shows.
 asked :: Log -> Signed -> Socket -> Setup -> IO (Either Text Opponent)
 asked log' signed connection setup =
-  Challenge.findPlayer signed.token setup.versus >>= \case
+  Challenge.findPlayer signed.token (versusOf setup) >>= \case
     Left  why -> Left why <$ connection.stop
     Right who -> do
-      log'.note (setup.versus <> " is player " <> Text.pack (show who))
+      log'.note (versusOf setup <> " is player " <> Text.pack (show who))
       Challenge.challenging signed.token who setup >>= \case
         Left  why     -> Left why <$ connection.stop
         Right started -> do

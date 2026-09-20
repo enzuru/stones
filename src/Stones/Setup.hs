@@ -26,6 +26,7 @@ module Stones.Setup
   , Signing(..)
   , describeSigning
   , signedIn
+  , versusOf
   , Strength(..)
   , strengths
   , describeStrength
@@ -169,6 +170,15 @@ describeHandicap :: Int -> Text
 describeHandicap 0 = "None"
 describeHandicap n = Text.pack (show n)
 
+-- | The name to ask for a game by, with the spaces either side taken
+-- off.
+--
+-- Taken off here rather than as it is typed. The page shows what it
+-- holds, so trimming what was typed would take a space away from under
+-- somebody's cursor while they were still typing the next word.
+versusOf :: Setup -> Text
+versusOf setup = Text.strip setup.versus
+
 -- | A 19x19 game as Black against an opponent trying hard, which is
 -- what a game of Go is when nobody says otherwise.
 defaultSetup :: Setup
@@ -209,7 +219,7 @@ chose setup = \case
   ChoseSide side      -> setup { human = side }
   ChoseStrength which -> setup { strength = which }
   ChoseHandicap n     -> setup { handicap = n }
-  ChoseVersus who     -> setup { versus = Text.strip who }
+  ChoseVersus who     -> setup { versus = who }
   StartPressed        -> setup
   SignInPressed       -> setup
 
@@ -222,8 +232,8 @@ describeSetup setup = Text.intercalate "  \183  " (board : rest)
   -- the colour and the opponent on the other side, so naming either
   -- here would be saying something this program does not know.
   rest  = case setup.against of
-    Online | Text.null setup.versus -> [describePlace Online]
-           | otherwise              -> [describePlace Online, setup.versus]
+    Online | Text.null (versusOf setup) -> [describePlace Online]
+           | otherwise -> [describePlace Online, versusOf setup]
     Computer -> [colorWord setup.human, describeStrength setup.strength] <> stones
   stones | setup.handicap < 2 = []
          | otherwise = [describeHandicap setup.handicap <> " stones"]
@@ -299,13 +309,18 @@ launchPage signing setup = bin
                setup.handicap
                ChoseHandicap
       ]
-  -- The name is not read back out of what was chosen, so that what is
-  -- typed is not taken away and put back under the cursor while
-  -- somebody is still typing it. What they typed is what it says, and
-  -- the page keeps up rather than the other way round.
+  -- The row shows what the page holds, and the page holds what was
+  -- typed, so the two never disagree. A row that showed nothing while
+  -- the page held a name would be a row that lied: the game would be
+  -- asked for against somebody the player could not see.
+  --
+  -- It does not fight the typing, because the two are already the same
+  -- by the time the next render comes round, and a value that has not
+  -- changed is not written back.
   versus' = widget
     Adw.EntryRow
     [ #title := "Opponent"
+    , #text := setup.versus
     , #tooltipText
       := "A name to play against, or nothing for whoever else is looking"
     , onM #changed (fmap ChoseVersus . Gtk.editableGetText)

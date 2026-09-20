@@ -225,6 +225,23 @@ prop_thePageAsksOnlyWhatThePlaceItIsAboutCanAnswer =
     groups === 2
     titles === ["Play", "Play on", "Account"]
 
+prop_theOpponentRowShowsTheNameThePageHolds :: Property
+prop_theOpponentRowShowsTheNameThePageHolds = withTests 1 . property $ do
+  -- A row that showed nothing while the page held a name would be a
+  -- row that lied, and the game would be asked for against somebody
+  -- the player could not see. The command line can put one there
+  -- before anybody has typed anything.
+  let named = next onlinePage (InSetup 1 (ChoseVersus "amybot-beginner"))
+  shown' <- evalIO . built named $ \widget' -> do
+    rows <- descendantsOf Adw.EntryRow widget'
+    traverse Gtk.editableGetText rows
+  shown' === ["amybot-beginner"]
+  -- And an empty one stays empty, which is what asks for anybody.
+  blank <- evalIO . built onlinePage $ \widget' -> do
+    rows <- descendantsOf Adw.EntryRow widget'
+    traverse Gtk.editableGetText rows
+  blank === [""]
+
 prop_thePageSaysWhetherAnybodyIsSignedIn :: Property
 prop_thePageSaysWhetherAnybodyIsSignedIn = withTests 1 . property $ do
   -- The line is on the row rather than anywhere else, because the row
