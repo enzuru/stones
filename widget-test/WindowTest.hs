@@ -20,6 +20,7 @@ module WindowTest
   )
 where
 
+import           Data.IORef
 import           Data.List                      ( isInfixOf )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
@@ -186,14 +187,19 @@ prop_aTabOnItsPageShowsThePage = withTests 1 . property $ do
     pure (length pages, length areas, length rows, length groups, titles)
   pages === 1
   areas === 0
-  -- A row and a toggle group for each thing there is to choose.
-  rows === length choices
+  -- A row for each thing there is to choose, and a toggle group in all
+  -- but one of them: the ten levels an engine takes are a list to drop
+  -- down rather than ten toggles side by side.
+  rows === length choices + 1
   groups === length choices
+  combos <- evalIO . built onePage $ \widget' ->
+    length <$> descendantsOf Adw.ComboRow widget'
+  combos === 1
   titles === [("New game", describeSetup asking)]
 
 prop_thePageOffersEveryChoiceThereIs :: Property
 prop_thePageOffersEveryChoiceThereIs = withTests 1 . property $ do
-  -- Every board, colour, strength and handicap there is, as toggles
+  -- Every place, board, colour and handicap there is, as toggles
   -- rather than as anything the page had to be told about twice. The
   -- count comes from the lists themselves, so a choice added to one of
   -- them is a choice this asks for.
@@ -201,16 +207,47 @@ prop_thePageOffersEveryChoiceThereIs = withTests 1 . property $ do
     groups <- descendantsOf Adw.ToggleGroup widget'
     traverse Adw.toggleGroupGetNToggles groups
   toggles === map fromIntegral choices
+  -- And every level, in the one row that drops down.
+  levels <- evalIO . built onePage $ \widget' -> do
+    combos <- descendantsOf Adw.ComboRow widget'
+    traverse (\row -> Adw.comboRowGetModel row >>= \held -> case held of
+               Just model -> Gio.listModelGetNItems model
+               Nothing    -> pure 0
+             )
+             combos
+  levels === [fromIntegral (length strengths)]
 
--- | How many there are of each thing the page asks about, in the order
--- the page asks, for a game on this machine.
+-- | How many there are of each thing the page asks about with toggles,
+-- in the order the page asks, for a game on this machine.
 choices :: [Int]
-choices =
-  [length places, length boardWidths, 2, length strengths, length handicaps]
+choices = [length places, length boardWidths, 2, length handicaps]
 
 -- | The same page, asking about a game on the server instead.
 onlinePage :: State
 onlinePage = next onePage (InSetup 1 (ChosePlace Online))
+
+prop_pickingALevelFromTheListReportsIt :: Property
+prop_pickingALevelFromTheListReportsIt = withTests 1 . property $ do
+  -- The one row on the page somebody chooses from a list rather than
+  -- by pressing one of a row of toggles.
+  said <- evalIO $ do
+    heard <- newIORef []
+    made  <- runUI (create (view' onePage))
+    watching <- runUI
+      (subscribe (view' onePage) made (\event -> modifyIORef' heard (<> [event])))
+    runUI $ do
+      combos <- descendantsOf Adw.ComboRow =<< widgetOf made
+      case combos of
+        row : _ -> Adw.comboRowSetSelected row 0
+        []      -> pure ()
+    settle
+    runUI (cancel watching)
+    readIORef heard
+  -- The first of them is level one, and it is the name that comes
+  -- back rather than where it sat in the list.
+  case said of
+    [InSetup 1 (ChoseStrength picked)] -> picked === Strength 1
+    _ -> annotate "it reported something else" >> failure
 
 prop_thePageAsksOnlyWhatThePlaceItIsAboutCanAnswer :: Property
 prop_thePageAsksOnlyWhatThePlaceItIsAboutCanAnswer =

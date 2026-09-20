@@ -61,6 +61,12 @@ import qualified GI.Adw                        as Adw
 import qualified GI.Gtk                        as Gtk
 import           GI.Gtk.Declarative
 import           GI.Gtk.Declarative.Adwaita.Bin ( )
+import           GI.Gtk.Declarative.Adwaita.ComboRow
+                                                ( ComboRowParams(..)
+                                                , choice
+                                                , comboRow
+                                                , defaultComboRowParams
+                                                )
 import           GI.Gtk.Declarative.Adwaita.Rows
                                                 ( headerSuffix
                                                 , rowSuffix
@@ -96,6 +102,12 @@ describeStrength (Strength n) = Text.pack (show n)
 -- | The number in one, for whoever has to hand it to an engine.
 strengthNumber :: Strength -> Int
 strengthNumber (Strength n) = n
+
+-- | The strength that goes by this name, or the hardest one, since a
+-- name no strength answers to is not a name this page ever wrote.
+strengthNamed :: Text -> Strength
+strengthNamed name =
+  fromMaybe (Strength 10) (listToMaybe [ w | w <- strengths, describeStrength w == name ])
 
 -- | Where a game is played.
 --
@@ -382,9 +394,7 @@ launchPage signing already setup = bin
   ]
   (bin
     Adw.Clamp
-    -- Wide enough for the ten levels an engine takes, which is the
-    -- longest row of choices on either page.
-    [#maximumSize := 520]
+    [#maximumSize := 400]
     (container
       Gtk.Box
       [#orientation := Gtk.OrientationVertical, #spacing := 24]
@@ -406,6 +416,17 @@ launchPage signing already setup = bin
   )
  where
   boardLabel n = let w = Text.pack (show n) in w <> "\215" <> w
+  -- Ten of them, which is a list to drop down rather than a row of
+  -- toggles: ten toggles side by side is a row too wide to read, and
+  -- it made the whole page wider to hold it.
+  levels = comboRow
+    [#title := "Level"]
+    defaultComboRowParams
+      { choices  = Vector.fromList
+        [ choice (describeStrength w) (describeStrength w) | w <- strengths ]
+      , chosen   = Just (describeStrength setup.strength)
+      , onChosen = Just (ChoseStrength . strengthNamed)
+      }
   -- The games this player is already in, when there are any and there
   -- is somebody to be. Nothing has to be agreed to open one: it is
   -- already going, and this is only a way back into it.
@@ -443,11 +464,11 @@ launchPage signing already setup = bin
           ]
         )
     ]
-  board = choice "Play on"
+  board = toggling "Play on"
                  [ (Text.pack (show n), boardLabel n, n) | n <- boardWidths ]
                  setup.size
                  ChoseBoard
-  where' = choice "Play"
+  where' = toggling "Play"
                   [ (describePlace p, describePlace p, p) | p <- places ]
                   setup.against
                   ChosePlace
@@ -457,15 +478,15 @@ launchPage signing already setup = bin
     Online ->
       [ where'
       , board
-      , choice "Speed"
+      , toggling "Speed"
                [ (describeSpeed how, describeSpeed how, how) | how <- speeds ]
                setup.speed
                ChoseSpeed
-      , choice "Rank"
+      , toggling "Rank"
                [("unranked", "Unranked", False), ("ranked", "Ranked", True)]
                setup.ranked
                ChoseRanked
-      , choice "Handicap"
+      , toggling "Handicap"
                [ ( describeHandicapping h
                  , describeHandicapping h
                  , h
@@ -480,15 +501,12 @@ launchPage signing already setup = bin
     Computer ->
       [ where'
       , board
-      , choice "You play"
+      , toggling "You play"
                [ (colorWord side, colorWord side, side) | side <- [Black, White] ]
                setup.human
                ChoseSide
-      , choice "Level"
-               [ (describeStrength w, describeStrength w, w) | w <- strengths ]
-               setup.strength
-               ChoseStrength
-      , choice "Handicap"
+      , levels
+      , toggling "Handicap"
                [ (describeHandicap n, describeHandicap n, n) | n <- handicaps ]
                setup.handicap
                ChoseHandicap
@@ -538,14 +556,14 @@ launchPage signing already setup = bin
 -- Each toggle carries a name, which is what the group answers with, so
 -- the names and what they stand for are given together here and looked
 -- up on the way back.
-choice
+toggling
   :: Eq a
   => Text
   -> [(Text, Text, a)]
   -> a
   -> (a -> SetupEvent)
   -> Widget SetupEvent
-choice title options chosen report = container
+toggling title options picked report = container
   Adw.ActionRow
   [#title := title]
   [ rowSuffix
@@ -555,7 +573,7 @@ choice title options chosen report = container
           { toggles     = Vector.fromList
             [ toggle name label | (name, label, _) <- options ]
           , active      = listToMaybe
-            [ name | (name, _, value) <- options, value == chosen ]
+            [ name | (name, _, value) <- options, value == picked ]
           , onActivated = Just (report . meaning)
           }
       )
@@ -565,4 +583,4 @@ choice title options chosen report = container
   -- way is not a way this goes. What is chosen now is what it answers
   -- with if it ever did, which is a choice that changes nothing.
   meaning name =
-    fromMaybe chosen (lookup name [ (n, value) | (n, _, value) <- options ])
+    fromMaybe picked (lookup name [ (n, value) | (n, _, value) <- options ])
