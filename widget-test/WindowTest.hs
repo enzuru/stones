@@ -20,6 +20,7 @@ module WindowTest
   )
 where
 
+import           Data.List                      ( isInfixOf )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import qualified GI.Adw                        as Adw
@@ -32,6 +33,7 @@ import           Hedgehog
 
 import           Go.Types
 import           Stones.App
+import           Stones.Chat                    ( chatPane )
 import           Stones.Opponent
 import           Stones.Session
 import           Stones.Setup
@@ -43,6 +45,7 @@ silent = Opponent { name  = "nobody"
                   , tell  = \_ -> pure (Right ())
                   , hear  = pure ()
                   , leave = pure ()
+                  , talks = True
                   }
 
 source :: Opponents
@@ -290,6 +293,92 @@ prop_theGameStoppingPatchesTheWindow = withTests 1 . property $ do
     made <- create (view' oneGame)
     pure (decision made (view' oneGame) (view' beingCounted))
   said === Modified
+
+-- | The same one game, with the pane beside the board out and
+-- something said in it.
+talking :: State
+talking = foldl
+  (\state event -> next state event)
+  oneGame
+  [ InTab 1 (Arrived (Spoke "hikaru" "good game"))
+  , InTab 1 (Arrived (Spoke "nobody" "thanks, you too"))
+  , ChatToggled True
+  ]
+
+prop_thePaneShowsWhatWasSaidAndALineToSayOn :: Property
+prop_thePaneShowsWhatWasSaidAndALineToSayOn = withTests 1 . property $ do
+  (entries, labels) <- evalIO . built talking $ \widget' -> do
+    entries <- descendantsOf Gtk.Entry widget'
+    labels  <- traverse Gtk.labelGetLabel =<< descendantsOf Gtk.Label widget'
+    pure (length entries, labels)
+  -- One line to type on.
+  entries === 1
+  -- Who said each thing and what it was, in the order it was said.
+  assert (["hikaru", "good game", "nobody", "thanks, you too"] `isInfixOf` labels)
+
+prop_aGameNobodyCanBeTalkedToInHasNoPaneAndNoButtonForOne :: Property
+prop_aGameNobodyCanBeTalkedToInHasNoPaneAndNoButtonForOne =
+  withTests 1 . property $ do
+    -- A program takes what is said to it and says nothing back. The
+    -- pane is not hidden, it is not built: there is nothing to reveal.
+    let quiet = next (next onePage (InSetup 1 StartPressed))
+                     (TabOpened 1 (Right silent { talks = False }))
+    (entries, toggles) <- evalIO . built (next quiet (ChatToggled True))
+      $ \widget' -> do
+          entries <- descendantsOf Gtk.Entry widget'
+          toggles <- descendantsOf Gtk.ToggleButton widget'
+          pure (length entries, length toggles)
+    entries === 0
+    -- And a game that can be talked to has one toggle button more,
+    -- counted against the quiet one because the menu in the corner is
+    -- built out of one of its own.
+    talkative <- evalIO . built oneGame
+      $ \widget' -> length <$> descendantsOf Gtk.ToggleButton widget'
+    talkative === toggles + 1
+
+prop_showingThePanePatchesTheWindow :: Property
+prop_showingThePanePatchesTheWindow = withTests 1 . property $ do
+  let said = next oneGame (InTab 1 (Arrived (Spoke "hikaru" "good game")))
+  patched <- evalIO . runUI $ do
+    made <- create (view' oneGame)
+    pure (decision made (view' oneGame) (view' (next said (ChatToggled True))))
+  patched === Modified
+
+prop_thePaneStaysAtTheNewestMessage :: Property
+prop_thePaneStaysAtTheNewestMessage = withTests 1 . property $ do
+  -- More messages than fit, so there is something to scroll past.
+  let many = [ Chat "hikaru" (Text.replicate 6 ("line " <> Text.pack (show n) <> " "))
+             | n <- [1 .. 40 :: Int]
+             ]
+  (value, upper, showing) <- evalIO $ do
+    window <- runUI $ do
+      window <- Gtk.new
+        Gtk.Window
+        [#defaultWidth Gtk.:= 300, #defaultHeight Gtk.:= 300]
+      made <- create (chatPane many)
+      Gtk.windowSetChild window . Just =<< widgetOf made
+      Gtk.windowPresent window
+      pure window
+    -- A few turns of the loop, which is what it takes to go from a
+    -- window being presented to its contents being laid out and the
+    -- scrolling that follows the laying out.
+    mapM_ (const settle) [1 .. 20 :: Int]
+    runUI $ do
+      scrollers <- descendantsOf Gtk.ScrolledWindow =<< Gtk.toWidget window
+      answer    <- case scrollers of
+        scroller : _ -> do
+          adjustment <- Gtk.scrolledWindowGetVadjustment scroller
+          (,,)
+            <$> Gtk.adjustmentGetValue adjustment
+            <*> Gtk.adjustmentGetUpper adjustment
+            <*> Gtk.adjustmentGetPageSize adjustment
+        [] -> pure (0, 0, 0)
+      Gtk.windowDestroy window
+      pure answer
+  annotateShow (value, upper, showing)
+  -- There is more than fits, and what is in view is the end of it.
+  assert (upper > showing)
+  assert (value >= upper - showing - 1)
 
 prop_theMenuComesFromTheMarkup :: Property
 prop_theMenuComesFromTheMarkup = withTests 1 . property $ do

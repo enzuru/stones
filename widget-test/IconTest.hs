@@ -113,6 +113,9 @@ prop_theIconsTheHeaderBarAsksForAreAllThere = withTests 1 . property $ do
           -- The same button as the one above, once the game has
           -- stopped and what is left is agreeing the count.
         , "object-select-symbolic"
+          -- The pane beside the board, in a game there is somebody to
+          -- talk to in.
+        , "chat-message-new-symbolic"
         , "open-menu-symbolic"
         ]
   found <- evalIO (runUI (traverse (Gtk.iconThemeHasIcon theme) wanted))

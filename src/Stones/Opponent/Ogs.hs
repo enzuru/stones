@@ -67,6 +67,7 @@ joining connection player game = do
           , tell  = telling connection table
           , hear  = hearing connection table
           , leave = void (connection.put (leaving game))
+          , talks = True
           }
         )
 

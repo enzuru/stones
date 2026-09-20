@@ -57,6 +57,10 @@ data Opponent = Opponent
   , leave :: IO ()
     -- ^ Let it go. This does not fail: there is nothing the window
     -- would do about it.
+  , talks :: Bool
+    -- ^ Whether there is anybody on the other side to talk to. A
+    -- program takes what is said to it and has nothing to say back, so
+    -- a window playing one shows no pane to say it in.
   }
 
 -- | Where a game gets an opponent, and where it gives one back.

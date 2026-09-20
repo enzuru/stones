@@ -47,6 +47,7 @@ silent = Opponent { name  = "nobody"
                   , tell  = \_ -> pure (Right ())
                   , hear  = pure ()
                   , leave = pure ()
+                  , talks = True
                   }
 
 -- | One that will not be told anything, and says why.
@@ -280,6 +281,42 @@ prop_movesComingOffOverThereComeOffHere = withTests 1 . property $ do
   (after game (Arrived (Undid 5))).game.moves === []
   (after game (Arrived (Undid 0))).game.moves === []
 
+-- * Talking
+-------------
+
+prop_thereIsOnlySomebodyToTalkToWhenThereIsSomebodyThere :: Property
+prop_thereIsOnlySomebodyToTalkToWhenThereIsSomebodyThere =
+  withTests 1 . property $ do
+    -- A program takes what is said to it and says nothing back. A
+    -- window playing one shows no pane to say it in.
+    canTalk game === True
+    canTalk (gameWith silent { talks = False }) === False
+    canTalk (starting Black 9) === False
+    canTalk (couldNotOpen "gone" (starting Black 9)) === False
+
+prop_anEmptyLineIsNotSomethingToSay :: Property
+prop_anEmptyLineIsNotSomethingToSay = withTests 1 . property $ do
+  -- A stray press of the return key. Saying nothing to everybody is
+  -- worse than saying nothing at all.
+  said <- saying opening' [Says "", Says "   ", Says "\n"]
+  said === []
+  -- And the words either side of the spaces are what goes.
+  spoken <- saying opening' [Says "  good game  "]
+  spoken === [Said "good game"]
+  where opening' = opening Black
+
+prop_whatIsSaidIsNotWrittenDownUntilItComesBack :: Property
+prop_whatIsSaidIsNotWrittenDownUntilItComesBack =
+  withTests 1 . property $ do
+    -- The same words show whether this program or the other one put
+    -- them there, and everybody sees them in the order everybody else
+    -- does.
+    let mine   = after game (Says "good game")
+        theirs = after mine (Arrived (Spoke "hikaru" "good game"))
+    map (.what) mine.said === []
+    map (.who) theirs.said === ["hikaru"]
+    map (.what) theirs.said === ["good game"]
+
 -- * The counting at the end
 -----------------------------
 
@@ -458,8 +495,16 @@ prop_whatTheServerSaysIsTakenOverWhatWasCountedHere =
     -- The server is the one that decides. A clock counted along here
     -- drifts, and every move is a chance to put it right.
     let drifted = tick (tick (after game (Arrived (Ticked running))))
-        said    = running
-          { black = Time { seconds = 555, periods = 0, each = 0 } } :: Clock
+        -- Written out rather than updated, because `black` is a field
+        -- of the captures as well and a record update cannot be told
+        -- which is meant.
+        said    = Clock { black   = Time { seconds = 555
+                                         , periods = 0
+                                         , each    = 0
+                                         }
+                        , white   = running.white
+                        , running = running.running
+                        }
         settled = after drifted (Arrived (Ticked said))
     clockOf settled Black === Just said.black
 

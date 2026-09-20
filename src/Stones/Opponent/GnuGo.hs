@@ -99,6 +99,8 @@ open program setup = do
             , tell  = telling gtp current output setup.human
             , hear  = fromInput input
             , leave = Gtp.stop gtp >> atomically seal
+              -- It takes what is said to it and says nothing back.
+            , talks = False
             }
       setUp <- newGame gtp current setup.size
       case setUp of

@@ -28,6 +28,7 @@ module Stones.Session
   , ready
   , playable
   , canUndo
+  , canTalk
   , settling
   , deadIn
   , canAccept
@@ -43,6 +44,7 @@ where
 import           Data.Maybe                     ( isJust )
 import qualified Data.Set                      as Set
 import           Data.Text                      ( Text )
+import qualified Data.Text                     as Text
 
 import           GI.Gtk.Declarative.App.Simple  ( Transition(..)
                                                 , none
@@ -300,6 +302,14 @@ humanMove session move = case ready session of
       | finished game -> telling session { game = game } them [Moved move, Counting]
       | otherwise     -> telling session { game = game } them [Moved move, Asked]
 
+-- | Is there anybody on the other side to talk to?
+--
+-- A game against a program is not a conversation. Showing a pane to
+-- say something in, beside a board where nothing would ever answer, is
+-- worse than showing none.
+canTalk :: Session -> Bool
+canTalk session = maybe False (.talks) (listening session)
+
 -- * Counting
 --------------
 
@@ -366,8 +376,13 @@ resign session = case ready session of
 -- them there, and shows them in the order everybody else sees.
 says :: Session -> Text -> Step
 says session text = case session.standing of
-  Here it -> Transition session (perform (saying it [Said text]))
-  _       -> stay session
+  -- A stray press of the return key on an empty line is not something
+  -- to say, and saying nothing to everybody is worse than saying
+  -- nothing at all.
+  Here it | not (Text.null trimmed) ->
+    Transition session (perform (saying it [Said trimmed]))
+  _ -> stay session
+  where trimmed = Text.strip text
 
 -- | Take back moves until it is the player's turn again, here and on
 -- the other side.

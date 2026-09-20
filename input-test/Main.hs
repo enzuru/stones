@@ -70,6 +70,7 @@ passing = do
       _     -> pure (Right ())
     , hear  = fromInput input
     , leave = atomically seal
+    , talks = False
     }
 
 source :: Opponents

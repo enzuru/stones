@@ -47,6 +47,7 @@ silent = Opponent { name  = "nobody"
                   , tell  = \_ -> pure (Right ())
                   , hear  = pure ()
                   , leave = pure ()
+                  , talks = True
                   }
 
 -- | A source of opponents that hands out the same silent one.

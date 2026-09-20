@@ -75,6 +75,7 @@ import           Go.Game
 import           Go.Types
 import           Stones.Opponent
 import qualified Stones.Menu                   as Menu
+import           Stones.Chat                    ( chatPane )
 import           Stones.Goban
 import           Stones.Session
 import           Stones.Setup
@@ -112,6 +113,11 @@ data State = State
     -- started, so a second game of the same kind is one click.
   , opponents :: Opponents
     -- ^ Where a game gets its opponent, once there is a game.
+  , showChat  :: Bool
+    -- ^ Whether the pane beside the board is out. One flag for the
+    -- window rather than one per tab: it is a way of using the
+    -- program, and a player who wants to see what is said wants to see
+    -- it in whichever game they are looking at.
   , signing   :: Signing
     -- ^ How far the player has got with signing in, which one of the
     -- two places asks for. It belongs to the window rather than to a
@@ -133,6 +139,8 @@ data Event
   | TabsReordered (Vector Text)
   | ResignChosen
     -- ^ Give up the game showing, which is what the menu means by it.
+  | ChatToggled Bool
+    -- ^ Show or hide the pane beside the board.
   | SignedInAs (Either Text Text)
     -- ^ The signing in that was started finished, either with what to
     -- call the player or with why not.
@@ -153,6 +161,7 @@ startingState opponents opening = State { openTabs  = []
                                         , nextTab   = 1
                                         , opening   = opening
                                         , opponents = opponents
+                                        , showChat  = False
                                         , signing   = SignedOut
                                         }
 
@@ -170,6 +179,8 @@ update' state = \case
   InSetup _ SignInPressed      -> signIn state
 
   InSetup tab event            -> inSetup state tab event
+
+  ChatToggled out              -> Transition state { showChat = out } none
 
   SignedInAs (Right name)      -> Transition state { signing = SignedIn name } none
   SignedInAs (Left  why )      ->
@@ -477,7 +488,27 @@ header state = container
   -- the corner, which is where a GNOME program keeps it.
   , headerBarEnd (mainMenu state)
   , headerBarEnd (finishing state)
+  , headerBarEnd (talking state)
   ]
+
+-- | The button that shows the pane beside the board.
+--
+-- Only a game with somebody on the other side has one at all. A
+-- program takes what is said to it and says nothing back, and a button
+-- that opened an empty pane beside a board where nothing would ever
+-- answer is worse than no button.
+talking :: State -> Widget Event
+talking state
+  | maybe False (canTalk . snd) (shownGame state) = widget
+    Gtk.ToggleButton
+    [ #iconName := "chat-message-new-symbolic"
+    , #tooltipText := "Show what has been said about this game"
+    , #active := state.showChat
+    , on #toggled (ChatToggled (not state.showChat))
+    ]
+  | otherwise = widget
+    Gtk.Box
+    [#visible := False, #widthRequest := 0]
 
 -- | The button at the right-hand end.
 --
@@ -620,7 +651,7 @@ gameTabs state = tabView
   tabFor (tab, Playing session) = Tab
     { tabKey   = keyOf tab
     , tabTitle = "Game " <> Text.pack (show tab)
-    , tabChild = board tab session
+    , tabChild = board state tab session
     }
   tabFor (tab, Choosing setup) = Tab
     { tabKey   = keyOf tab
@@ -630,8 +661,26 @@ gameTabs state = tabView
 
 -- | One game's board, with a little room around it so that the wood
 -- does not touch the edge of the window.
-board :: TabId -> Session -> Widget Event
-board tab session = toEvent <$> goban
+board :: State -> TabId -> Session -> Widget Event
+board state tab session
+  | canTalk session = container
+    Gtk.Box
+    [#orientation := Gtk.OrientationHorizontal]
+    [ BoxChild defaultBoxChildProperties { expand = True, fill = True }
+      (onlyTheBoard tab session)
+    , BoxChild defaultBoxChildProperties $ bin
+      Gtk.Revealer
+      [ #revealChild := state.showChat
+      , #transitionType := Gtk.RevealerTransitionTypeSlideLeft
+      ]
+      (InTab tab <$> chatPane session.said)
+    ]
+  | otherwise = onlyTheBoard tab session
+
+-- | The board on its own, which is the whole of a tab in a game
+-- nobody can be talked to in.
+onlyTheBoard :: TabId -> Session -> Widget Event
+onlyTheBoard tab session = toEvent <$> goban
   [ #marginStart := 8
   , #marginEnd := 8
   , #marginTop := 8
