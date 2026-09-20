@@ -42,6 +42,7 @@ library
                     , Stones.App
                     , Stones.Ogs
                     , Stones.Ogs.Account
+                    , Stones.Ogs.Challenge
                     , Stones.Ogs.Frame
                     , Stones.Ogs.Login
                     , Stones.Ogs.Protocol
@@ -117,6 +118,7 @@ test-suite stones-tests
   other-modules:      AccountTest
                     , AppTest
                     , BoardTest
+                    , ChallengeTest
                     , DrawTest
                     , FakeEngineTest
                     , FrameTest

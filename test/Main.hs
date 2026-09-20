@@ -25,6 +25,7 @@ import qualified AppTest
 import qualified BoardTest
 import qualified DrawTest
 import qualified FakeEngineTest
+import qualified ChallengeTest
 import qualified FrameTest
 import qualified LoginTest
 import qualified SocketTest
@@ -51,6 +52,7 @@ main = do
     , GeometryTest.tests
     , DrawTest.tests
     , FrameTest.tests
+    , ChallengeTest.tests
     , LoginTest.tests
     , SocketTest.tests
     , ProtocolTest.tests
