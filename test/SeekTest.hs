@@ -55,23 +55,22 @@ prop_askingSaysWhatKindOfGameIsWanted = withTests 1 . property $ do
                 , "value" .= ("japanese" :: Text)
                 ]
               , "handicap" .= object
-                [ "condition" .= ("required" :: Text)
-                , "value" .= ("disabled" :: Text)
+                [ "condition" .= ("no-preference" :: Text)
+                , "value" .= ("enabled" :: Text)
                 ]
               ]
           ]
           Nothing
 
-prop_handicapIsRefusedRatherThanLeftOpen :: Property
-prop_handicapIsRefusedRatherThanLeftOpen = withTests 1 . property $ do
-  -- The server says which move arrived and not who made it, so the
-  -- colour is worked out from the count, and a handicap game gives
-  -- Black several moves before White has any. Until that is handled,
-  -- an even game is the only kind this program can keep straight.
+prop_handicapIsLeftOpen :: Property
+prop_handicapIsLeftOpen = withTests 1 . property $ do
+  -- The server says where a game starts when it is joined, stones and
+  -- all, so a handicap is a board with stones on it already rather
+  -- than something to avoid.
   size <- forAll (Gen.element [9, 13, 19])
   fast <- forAll (Gen.element speeds)
   case finding Seek { name = "n", size = size, speed = fast } of
-    Event _ [body] _ -> assert (asks body "handicap" "required" "disabled")
+    Event _ [body] _ -> assert (asks body "handicap" "no-preference" "enabled")
     other            -> annotateShow other >> failure
 
 prop_everyBoardAndSpeedHasAName :: Property

@@ -230,5 +230,41 @@ prop_theWinnerOfAResignationIsTheOtherPlayer = withTests 1 . property $ do
     Left  reason -> giveUp (show reason)
     Right game   -> winnerByResignation game === Just Black
 
+prop_aGameCanStartWithStonesAlreadyDown :: Property
+prop_aGameCanStartWithStonesAlreadyDown = withTests 1 . property $ do
+  -- A handicap game is this: Black's stones are down before White has
+  -- played at all, so White is the one to move.
+  let handicap = gameFrom 9 [(Black, Coord 2 2), (Black, Coord 6 6)] White
+  handicap.turn === White
+  boardSize handicap === 9
+  stoneAt handicap.board (Coord 2 2) === Just Black
+  stoneAt handicap.board (Coord 6 6) === Just Black
+  stoneAt handicap.board (Coord 4 4) === Nothing
+  -- Nothing is behind it, because none of what is there was played
+  -- here.
+  handicap.moves === []
+  undoMove handicap === Nothing
+
+prop_aGameThatStartsSomewhereGoesOnFromThere :: Property
+prop_aGameThatStartsSomewhereGoesOnFromThere = withTests 1 . property $ do
+  let handicap = gameFrom 9 [(Black, Coord 2 2)] White
+  -- The rules carry on as they would anywhere else, and Black may not
+  -- play out of turn just because Black has stones down.
+  playMove Black (Play (Coord 4 4)) handicap === Left WrongPlayer
+  playMove White (Play (Coord 2 2)) handicap === Left Occupied
+  case playMove White (Play (Coord 4 4)) handicap of
+    Left  reason -> giveUp (show reason)
+    Right after' -> do
+      after'.turn === Black
+      stoneAt after'.board (Coord 4 4) === Just White
+
+prop_aStoneOffTheBoardIsLeftOut :: Property
+prop_aStoneOffTheBoardIsLeftOut = withTests 1 . property $ do
+  -- What is being described came from somewhere else, so it is taken
+  -- as far as it makes sense and no further.
+  let odd' = gameFrom 9 [(Black, Coord 2 2), (White, Coord 40 40)] Black
+  stoneAt odd'.board (Coord 2 2) === Just Black
+  boardSize odd' === 9
+
 tests :: Group
 tests = $$(discover)

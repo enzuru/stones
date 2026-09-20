@@ -275,12 +275,27 @@ takeBack session = case session.standing of
 -- | Something came from the other side.
 arrived :: Session -> Heard -> Step
 arrived session = \case
+  Began opening     -> began session opening
   Played color move -> theirMove session color move
   Spoke person text ->
     stay session { said = session.said <> [Chat person text] }
   Undid count       -> tookBack session count
   Counted out       -> stay session { note = Just (Result out) }
   Lost why          -> stay session { standing = Gone why }
+
+-- | The other side said where the game stands, so that is where it
+-- stands.
+--
+-- It says which colour the player has as well, because in a game
+-- somebody else paired there was nothing to decide it here. This
+-- arrives before any move does, and a game that has already started
+-- takes it again rather than arguing.
+began :: Session -> Opening -> Step
+began session opening = stay session
+  { game  = gameFrom opening.width opening.stones opening.opens
+  , human = opening.yours
+  , note  = Nothing
+  }
 
 -- | A move arrived. It is played here if it is the move this board is
 -- waiting for, and dropped if it is not.

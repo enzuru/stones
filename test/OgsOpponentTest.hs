@@ -76,7 +76,7 @@ game = 1234
 joined :: IO (Fake, Opponent)
 joined = do
   it     <- fake True
-  answer <- joining it.connection game
+  answer <- joining it.connection 77 game
   case answer of
     Left  why -> error (show why)
     Right them -> pure (it, them)
@@ -151,7 +151,7 @@ prop_whatHasNobodyToSayItToCountsAsSaid = withTests 1 . property $ do
 prop_aConnectionThatWillNotTakeItIsARefusal :: Property
 prop_aConnectionThatWillNotTakeItIsARefusal = withTests 1 . property $ do
   it     <- evalIO (fake False)
-  answer <- evalIO (joining it.connection game)
+  answer <- evalIO (joining it.connection 77 game)
   case answer of
     Left why -> why === "the connection has closed"
     Right _  -> annotate "it joined a game on a closed connection" >> failure
@@ -224,6 +224,81 @@ prop_theCountOfMovesFollowsTheBoard = withTests 1 . property $ do
               ]
             )
         ]
+
+-- | What the server says about a handicap game when it is joined:
+-- Black's stones are down, so White moves first, and fifty moves have
+-- been made since.
+handicapGame :: Packet
+handicapGame = Event
+  "game/1234/gamedata"
+  [ object
+      [ "width" .= (9 :: Int)
+      , "initial_player" .= ("white" :: Text)
+      , "initial_state" .= object
+        ["black" .= ("ccgg" :: Text), "white" .= ("" :: Text)]
+      , "black_player_id" .= (88 :: Int)
+      , "white_player_id" .= (77 :: Int)
+      , "moves" .= ([] :: [Value])
+      ]
+  ]
+  Nothing
+
+prop_aHandicapGameGetsItsColoursTheRightWayRound :: Property
+prop_aHandicapGameGetsItsColoursTheRightWayRound =
+  withTests 1 . property $ do
+    -- Black's stones are down before anybody has moved, so the first
+    -- move is White's. Reading the count without that would have every
+    -- colour in the game the wrong way round.
+    (it, them) <- evalIO joined
+    evalIO (it.arrive (Right handicapGame))
+    evalIO (it.arrive (Right (moveEvent 0 3 3)))
+    arrived <- evalIO (heardFrom them 2)
+    arrived
+      === Just
+            [ Began Opening { width  = 9
+                            , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
+                            , opens  = White
+                            , yours  = White
+                            }
+            , Played White (Play (Coord 3 3))
+            ]
+
+prop_howFarAlongTheGameIsComesFromTheServerToo :: Property
+prop_howFarAlongTheGameIsComesFromTheServerToo =
+  withTests 1 . property $ do
+    -- A game that was left and come back to is already somewhere, and
+    -- anything said about it carries where.
+    (it, them) <- evalIO joined
+    evalIO
+      (it.arrive
+        (Right
+          (Event
+            "game/1234/gamedata"
+            [ object
+                [ "width" .= (9 :: Int)
+                , "initial_player" .= ("black" :: Text)
+                , "black_player_id" .= (77 :: Int)
+                , "white_player_id" .= (88 :: Int)
+                , "moves" .= [toJSON [3, 3, 0 :: Int], toJSON [5, 5, 0 :: Int]]
+                ]
+            ]
+            Nothing
+          )
+        )
+      )
+    _       <- evalIO (heardFrom them 1)
+    _       <- evalIO (them.tell (Said "hello"))
+    packets <- evalIO it.sent
+    map bodyOf (drop 1 packets)
+      === [ Just
+              (object
+                [ "game_id" .= game
+                , "type" .= ("main" :: Text)
+                , "move_number" .= (2 :: Int)
+                , "body" .= ("hello" :: Text)
+                ]
+              )
+          ]
 
 tests :: Group
 tests = $$(discover)

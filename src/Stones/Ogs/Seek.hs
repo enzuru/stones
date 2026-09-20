@@ -90,13 +90,12 @@ newName = do
 
 -- | The frame that asks for a game.
 --
--- Handicap is refused rather than left open. The server says which
--- move arrived and not who made it, so this program works the colour
--- out from the count, and a handicap game gives Black several moves
--- before White has any, which would make every colour after them
--- wrong. Japanese rules are asked for rather than required, because
--- they settle a repeated position the way this program's own rules do
--- and a game is better than a perfect match.
+-- Nothing here is required except by accident. Japanese rules are
+-- asked for rather than insisted on, because they settle a repeated
+-- position the way this program's own rules do, and a game is better
+-- than a perfect match. Handicap is left open: the server says where a
+-- game starts when it is joined, stones and all, so a handicap is a
+-- board with stones on it already rather than something to avoid.
 finding :: Seek -> Packet
 finding seek = Event
   "automatch/find_match"
@@ -108,7 +107,9 @@ finding seek = Event
       , "rules" .= object
         ["condition" .= ("preferred" :: Text), "value" .= ("japanese" :: Text)]
       , "handicap" .= object
-        ["condition" .= ("required" :: Text), "value" .= ("disabled" :: Text)]
+        [ "condition" .= ("no-preference" :: Text)
+        , "value" .= ("enabled" :: Text)
+        ]
       ]
   ]
   Nothing

@@ -15,9 +15,13 @@
 -- and this turns what is inside one into something a game understands.
 module Stones.Ogs.Protocol
   ( Table(..)
+  , countFrom
+  , openerFrom
   , encodeMove
   , decodeMove
+  , decodeStones
   , moverOf
+  , openingFrom
   , outgoing
   , incoming
   )
@@ -27,16 +31,53 @@ import           Data.Aeson                     ( Value(..)
                                                 , object
                                                 , (.=)
                                                 )
+import qualified Data.Aeson.Key                as Key
 import qualified Data.Aeson.Types              as Aeson
 import           Data.Scientific                ( toBoundedInteger )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import qualified Data.Vector                   as Vector
 
+import           Go.Board                       ( coords
+                                                , stoneAt
+                                                )
+import           Go.Game
 import           Go.Types
 import           Stones.Opponent                ( Heard(..)
+                                                , Opening(..)
                                                 , Told(..)
                                                 )
+
+-- | A field of an object.
+fieldOf :: Text -> Value -> Maybe Value
+fieldOf key = \case
+  Object fields -> Aeson.parseMaybe (Aeson..: Key.fromText key) fields
+  _             -> Nothing
+
+-- | A whole number, if that is what this is.
+asWhole :: Value -> Maybe Int
+asWhole = \case
+  Number n -> toBoundedInteger n
+  _        -> Nothing
+
+-- | Text, if that is what this is.
+asString :: Value -> Maybe Text
+asString = \case
+  String text -> Just text
+  _           -> Nothing
+
+-- | A list, if that is what this is.
+asList :: Value -> Maybe [Value]
+asList = \case
+  Array items -> Just (Vector.toList items)
+  _           -> Nothing
+
+-- | A colour, as the server writes one.
+asColor :: Value -> Either Text Color
+asColor = \case
+  String "black" -> Right Black
+  String "white" -> Right White
+  _              -> Left "a colour that is neither black nor white"
 
 -- | The game this program is at, from the server's side of it.
 data Table = Table
@@ -45,6 +86,13 @@ data Table = Table
   , played     :: Int
     -- ^ How many moves have been made in it, which is what the server
     -- wants alongside anything said about the game.
+  , opens      :: Color
+    -- ^ Who made the first move. Black in an even game, and White in a
+    -- handicap one, where Black's stones are down before anybody has
+    -- moved at all.
+  , me         :: Int
+    -- ^ The number the server knows the player at this window by,
+    -- which is what says which colour they have.
   }
   deriving (Eq, Show)
 
@@ -77,15 +125,73 @@ decodeMove = \case
   whole (Number n) = maybe (Left "a move that is not whole") Right (toBoundedInteger n)
   whole _          = Left "a move that is not a number"
 
--- | Whose move that was.
+-- | The stones in one of the strings a game starts with: two letters
+-- each, a column and a row, both counted from @a@, with nothing
+-- between them. Anything left over at the end is not a stone.
+decodeStones :: Text -> [Coord]
+decodeStones text = case Text.unpack (Text.take 2 text) of
+  [column, row] | Just x <- number column, Just y <- number row ->
+    Coord x y : decodeStones (Text.drop 2 text)
+  _ -> []
+ where
+  number letter =
+    let n = fromEnum letter - fromEnum 'a'
+    in  if n >= 0 && n < 26 then Just n else Nothing
+
+-- | Whose move that was, in a game where this colour moved first.
 --
 -- The server says which move it was and not who made it, so it has to
 -- be worked out, and the count is all there is to work it out from.
--- Black moves first, and this program asks for even games only, which
--- is what makes that safe. A handicap game gives Black several moves
--- before White has any, and every colour after them would be wrong.
-moverOf :: Int -> Color
-moverOf number = if even number then Black else White
+-- Which colour starts is not always Black: a handicap game has Black's
+-- stones down before anybody moves, so White moves first.
+moverOf :: Color -> Int -> Color
+moverOf first number = if even number then first else opposite first
+
+-- | Where a game stands, out of everything the server says about it
+-- when it is joined.
+--
+-- The moves so far are played out rather than taken as read, because
+-- what is wanted is the position they lead to and stones come off
+-- along the way. A move these rules will not take means this program
+-- and the server disagree about the game, which is worth saying now
+-- rather than later.
+openingFrom :: Int -> Value -> Either Text Opening
+openingFrom player body = do
+  width   <- need "width" >>= must "a width that is not a number" . asWhole
+  first   <- need "initial_player" >>= asColor
+  black   <- need "black_player_id"
+    >>= must "a black player that is not a number" . asWhole
+  let start = fieldOf "initial_state" body
+      down  =  [ (Black, stone) | stone <- placed start "black" ]
+            <> [ (White, stone) | stone <- placed start "white" ]
+  made    <- traverse decodeMove (maybe [] id (fieldOf "moves" body >>= asList))
+  reached <- playOut (gameFrom width down first) made
+  Right Opening
+    { width  = width
+    , stones = standing reached.board
+    , opens  = reached.turn
+    , yours  = if player == black then Black else White
+    }
+ where
+  need key = maybe (Left ("a game with no " <> key <> " in it")) Right
+                   (fieldOf key body)
+  must why = maybe (Left why) Right
+  placed start which = maybe [] decodeStones (start >>= fieldOf which >>= asString)
+  playOut game []             = Right game
+  playOut game (move : after) = case playMove game.turn move game of
+    Left  reason -> Left ("a move these rules refuse: " <> describeIllegal reason)
+    Right next   -> playOut next after
+  standing board =
+    [ (color, point) | point <- coords board, Just color <- [stoneAt board point] ]
+
+-- | How far along a game is, out of what the server says about it.
+countFrom :: Value -> Maybe Int
+countFrom body = length <$> (fieldOf "moves" body >>= asList)
+
+-- | Who moved first in it, out of the same.
+openerFrom :: Value -> Maybe Color
+openerFrom body =
+  fieldOf "initial_player" body >>= either (const Nothing) Just . asColor
 
 -- | What to send when a game is told something.
 --
@@ -133,23 +239,18 @@ incoming table name arguments = do
     "move" -> do
       number <- field "move_number" body >>= asInt
       move   <- field "move" body
-      Just (either Lost (Played (moverOf number)) (decodeMove move))
+      Just (either Lost (Played (moverOf table.opens number)) (decodeMove move))
     "chat" -> do
       line   <- field "line" body
       person <- field "username" line >>= asText
       said   <- field "body" line >>= asText
       Just (Spoke person said)
+    "gamedata" -> Just (either Lost Began (openingFrom table.me body))
     "undo_accepted" -> do
       number <- asInt body
       Just (Undid (max 0 (table.played - number)))
     _ -> Nothing
  where
-  field key = \case
-    Object fields -> Aeson.parseMaybe (Aeson..: key) fields
-    _             -> Nothing
-  asInt = \case
-    Number n -> toBoundedInteger n
-    _        -> Nothing
-  asText = \case
-    String text -> Just text
-    _           -> Nothing
+  field = fieldOf
+  asInt = asWhole
+  asText = asString

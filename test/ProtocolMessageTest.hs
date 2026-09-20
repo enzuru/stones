@@ -1,7 +1,9 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
 -- | What this program says to online-go.com about a game, and what it
@@ -28,12 +30,13 @@ import qualified Hedgehog.Range                as Range
 import           Go.Types
 import           Stones.Ogs.Protocol
 import           Stones.Opponent                ( Heard(..)
+                                                , Opening(..)
                                                 , Told(..)
                                                 )
 
 -- | The game these are all about.
 table :: Table
-table = Table { identifier = 1234, played = 10 }
+table = Table { identifier = 1234, played = 10, opens = Black, me = 77 }
 
 -- | A point on a board that size.
 point :: Int -> Gen Coord
@@ -87,14 +90,19 @@ prop_aMoveOffTheBoardIsAPass = withTests 1 . property $ do
   assert (isLeft (decodeMove (toJSON ("dd" :: Text))))
   assert (isLeft (decodeMove (toJSON [Null])))
 
-prop_whoMovedIsWorkedOutFromTheCount :: Property
-prop_whoMovedIsWorkedOutFromTheCount = withTests 1 . property $ do
-  -- The server says which move it was and not who made it. Black goes
-  -- first, so the count decides.
-  moverOf 0 === Black
-  moverOf 1 === White
-  moverOf 2 === Black
-  moverOf 99 === White
+prop_whoMovedIsWorkedOutFromWhoOpened :: Property
+prop_whoMovedIsWorkedOutFromWhoOpened = withTests 1 . property $ do
+  -- The server says which move it was and not who made it, so who
+  -- opened and the count decide between them.
+  moverOf Black 0 === Black
+  moverOf Black 1 === White
+  moverOf Black 2 === Black
+  moverOf Black 99 === White
+  -- A handicap game has Black's stones down before anybody has moved,
+  -- so White is the one who moves first and every colour after it
+  -- follows from that.
+  moverOf White 0 === White
+  moverOf White 1 === Black
 
 prop_aMoveIsSentAsItsOwnEvent :: Property
 prop_aMoveIsSentAsItsOwnEvent = withTests 1 . property $ do
@@ -132,8 +140,11 @@ prop_takingBackAsksForItRatherThanDoingIt = withTests 1 . property $ do
           )
         ]
   -- And it never asks to go back past the start.
-  outgoing Table { identifier = 1, played = 1 } (TookBack 9)
-    === [("game/undo/request", object ["game_id" .= (1 :: Int), "move_number" .= (0 :: Int)])]
+  outgoing table { identifier = 1, played = 1 } (TookBack 9)
+    === [ ( "game/undo/request"
+          , object ["game_id" .= (1 :: Int), "move_number" .= (0 :: Int)]
+          )
+        ]
 
 prop_whatTheServerNeedsNoTellingOfIsNotSent :: Property
 prop_whatTheServerNeedsNoTellingOfIsNotSent = withTests 1 . property $ do
@@ -201,6 +212,109 @@ prop_whatThisProgramDoesNotActOnIsNothingToSay = withTests 1 . property $ do
 
 isLeft :: Either a b -> Bool
 isLeft = either (const True) (const False)
+
+-- * Where a game starts
+--------------------------
+
+-- | What the server says about a handicap game when it is joined.
+-- Black's two stones are down and White is the one to move.
+handicapGame :: Value
+handicapGame = object
+  [ "width" .= (9 :: Int)
+  , "handicap" .= (2 :: Int)
+  , "initial_player" .= ("white" :: Text)
+  , "initial_state" .= object
+    ["black" .= ("ccgg" :: Text), "white" .= ("" :: Text)]
+  , "black_player_id" .= (77 :: Int)
+  , "white_player_id" .= (88 :: Int)
+  , "moves" .= ([] :: [Value])
+  ]
+
+prop_stonesAreTwoLettersEachWithNothingBetweenThem :: Property
+prop_stonesAreTwoLettersEachWithNothingBetweenThem =
+  withTests 1 . property $ do
+    decodeStones "ccgg" === [Coord 2 2, Coord 6 6]
+    decodeStones "aa" === [Coord 0 0]
+    decodeStones "" === []
+    -- Half a stone is no stone.
+    decodeStones "ccg" === [Coord 2 2]
+    decodeStones "??" === []
+
+prop_aHandicapGameStartsWithStonesDownAndWhiteToMove :: Property
+prop_aHandicapGameStartsWithStonesDownAndWhiteToMove =
+  withTests 1 . property $ do
+    openingFrom 77 handicapGame
+      === Right Opening { width  = 9
+                        , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
+                        , opens  = White
+                        , yours  = Black
+                        }
+
+prop_whichColourThePlayerHasComesFromTheirNumber :: Property
+prop_whichColourThePlayerHasComesFromTheirNumber =
+  withTests 1 . property $ do
+    -- Nothing at this end decided it, because somebody else did the
+    -- pairing.
+    fmap (.yours) (openingFrom 77 handicapGame) === Right Black
+    fmap (.yours) (openingFrom 88 handicapGame) === Right White
+
+prop_aGameUnderWayIsPlayedOutRatherThanTakenAsRead :: Property
+prop_aGameUnderWayIsPlayedOutRatherThanTakenAsRead =
+  withTests 1 . property $ do
+    -- What is wanted is the position the moves lead to, and stones
+    -- come off along the way, so they are played rather than added up.
+    let started = object
+          [ "width" .= (9 :: Int)
+          , "initial_player" .= ("black" :: Text)
+          , "black_player_id" .= (88 :: Int)
+          , "white_player_id" .= (77 :: Int)
+          , "moves" .= [arriving 3 3, arriving 5 5]
+          ]
+    openingFrom 77 started
+      === Right Opening { width  = 9
+                        , stones = [(Black, Coord 3 3), (White, Coord 5 5)]
+                        , opens  = Black
+                        , yours  = White
+                        }
+
+prop_aGameTheseRulesRefuseIsSaidSoRatherThanHalfTaken :: Property
+prop_aGameTheseRulesRefuseIsSaidSoRatherThanHalfTaken =
+  withTests 1 . property $ do
+    let impossible = object
+          [ "width" .= (9 :: Int)
+          , "initial_player" .= ("black" :: Text)
+          , "black_player_id" .= (88 :: Int)
+          , "white_player_id" .= (77 :: Int)
+          , "moves" .= [arriving 3 3, arriving 3 3]
+          ]
+    case openingFrom 77 impossible of
+      Left why -> assert (Text.isInfixOf "refuse" why)
+      Right _  -> annotate "it took a game it cannot play" >> failure
+    -- And a game missing what it takes to start is refused too.
+    assert (isLeft (openingFrom 77 (object ["width" .= (9 :: Int)])))
+    assert (isLeft (openingFrom 77 (object [])))
+
+prop_howFarAlongAGameIsAndWhoOpenedIt :: Property
+prop_howFarAlongAGameIsAndWhoOpenedIt = withTests 1 . property $ do
+  countFrom handicapGame === Just 0
+  openerFrom handicapGame === Just White
+  countFrom (object ["moves" .= [arriving 3 3, arriving 5 5]]) === Just 2
+  openerFrom (object ["initial_player" .= ("black" :: Text)]) === Just Black
+  countFrom (object []) === Nothing
+  openerFrom (object []) === Nothing
+
+prop_theGameArrivesBeforeAnythingElseDoes :: Property
+prop_theGameArrivesBeforeAnythingElseDoes = withTests 1 . property $ do
+  -- The table says this player is number 77, and 77 is Black in this
+  -- game.
+  incoming table "game/1234/gamedata" [handicapGame]
+    === Just
+          (Began Opening { width  = 9
+                         , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
+                         , opens  = White
+                         , yours  = Black
+                         }
+          )
 
 tests :: Group
 tests = $$(discover)

@@ -16,6 +16,7 @@ module Go.Board
   -- itself.
   ( Board(size)
   , emptyBoard
+  , boardFrom
   , stoneAt
   , inBounds
   , coords
@@ -148,6 +149,21 @@ place color coord board
   -- writing to one copies it, so taking a group of stones off one at a
   -- time would copy the board once per stone.
   cleared = setAll [ (dead, Nothing) | dead <- Set.toList captured ] placed
+
+-- | A board of this width with these stones on it and nothing else.
+--
+-- The rules do not come into it. These are stones somebody else has
+-- already settled: the handicap a game starts with, or the position a
+-- game being rejoined is already at. A point that is not on a board
+-- this wide is left out rather than refused, because what is being
+-- described came from somewhere else.
+boardFrom :: Int -> [(Color, Coord)] -> Board
+boardFrom n stones = setAll
+  [ (coord, Just color)
+  | (color, coord) <- stones
+  , inBounds (emptyBoard n) coord
+  ]
+  (emptyBoard n)
 
 -- | Write one point.
 set :: Maybe Color -> Coord -> Board -> Board

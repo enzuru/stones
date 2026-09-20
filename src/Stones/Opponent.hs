@@ -25,6 +25,7 @@ module Stones.Opponent
   , Opponents(..)
   , Told(..)
   , Heard(..)
+  , Opening(..)
   )
 where
 
@@ -81,9 +82,30 @@ data Told
     -- ^ Something to say to whoever is listening.
   deriving (Eq, Show)
 
+-- | The position a game starts from, which is not always an empty
+-- board.
+--
+-- A handicap game starts with Black's stones already down and White to
+-- play. A game being rejoined starts wherever it had got to. Both are
+-- this, and the side that knows is the other one.
+data Opening = Opening
+  { width  :: Int
+  , stones :: [(Color, Coord)]
+    -- ^ What is already on the board.
+  , opens  :: Color
+    -- ^ Who plays next from here.
+  , yours  :: Color
+    -- ^ The colour the player at this window has in this game, which
+    -- is something only the other side knows when it did the pairing.
+  }
+  deriving (Eq, Show)
+
 -- | What arrives from the other side.
 data Heard
-  = Played Color Move
+  = Began Opening
+    -- ^ This is the game, and this is where it stands. It arrives
+    -- before anything else and can arrive again.
+  | Played Color Move
     -- ^ This was played, by this colour. The colour is said rather
     -- than assumed, because a server says it and is the one that
     -- knows.

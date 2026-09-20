@@ -33,6 +33,7 @@ import           GI.Gtk.Declarative.App.Simple  ( Cmd
 import           Hedgehog
 import qualified Pipes.Prelude                 as Pipes
 
+import           Go.Board                       ( stoneAt )
 import           Go.Game
 import           Go.Types
 import           Stones.Opponent
@@ -323,6 +324,45 @@ prop_whatAGameIsPlayedOn :: Property
 prop_whatAGameIsPlayedOn = withTests 1 . property $ do
   sessionSize game === 9
   sessionSize (starting Black 19) === 19
+
+prop_whereTheOtherSideSaysTheGameIsIsWhereItIs :: Property
+prop_whereTheOtherSideSaysTheGameIsIsWhereItIs = withTests 1 . property $ do
+  -- A handicap game, which is stones already down and White to play.
+  -- It also says which colour the player has, because in a game
+  -- somebody else paired there was nothing here to decide it.
+  let begun = after
+        game
+        (Arrived
+          (Began Opening { width  = 9
+                         , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
+                         , opens  = White
+                         , yours  = White
+                         }
+          )
+        )
+  begun.game.turn === White
+  begun.human === White
+  stoneAt begun.game.board (Coord 2 2) === Just Black
+  playable begun === True
+
+prop_aGameAlreadyUnderWayIsTakenAsItIs :: Property
+prop_aGameAlreadyUnderWayIsTakenAsItIs = withTests 1 . property $ do
+  -- The same thing is how a game that was left and come back to picks
+  -- up where it was, so a game with moves on it takes it too.
+  let played = after game (Clicked (Coord 3 3))
+      begun  = after
+        played
+        (Arrived
+          (Began Opening { width  = 9
+                         , stones = [(White, Coord 5 5)]
+                         , opens  = Black
+                         , yours  = Black
+                         }
+          )
+        )
+  stoneAt begun.game.board (Coord 5 5) === Just White
+  stoneAt begun.game.board (Coord 3 3) === Nothing
+  begun.game.turn === Black
 
 tests :: Group
 tests = $$(discover)

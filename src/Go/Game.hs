@@ -11,6 +11,7 @@
 module Go.Game
   ( Game(..)
   , newGame
+  , gameFrom
   , legal
   , playMove
   , undoMove
@@ -102,6 +103,20 @@ newGame n = Game { board    = emptyBoard n
                  , resigned = Nothing
                  , history  = []
                  }
+
+-- | A game that starts from stones already on the board, with this
+-- player to move.
+--
+-- A handicap game is one of these: Black's stones are down before
+-- White has played at all. So is a game somebody is rejoining, where
+-- every move so far is already on the board and there is nothing to be
+-- gained by playing them again.
+--
+-- Nothing is behind it. There are no moves to take back, because none
+-- of what is on the board was made here.
+gameFrom :: Int -> [(Color, Coord)] -> Color -> Game
+gameFrom n stones first =
+  (newGame n) { board = boardFrom n stones, turn = first }
 
 -- | The width of the board this game is played on.
 boardSize :: Game -> Int
