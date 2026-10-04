@@ -44,6 +44,31 @@ WARNINGS := -Wall -Werror=missing-fields -XHaskell2010
 # unambiguous when GHC is called directly.
 PACKAGES := -hide-package gi-gtk4 -hide-package gi-gdk4
 
+# GHC optimises nothing unless it is asked.
+#
+# `cabal build` asks for -O on its own, so a Makefile that did not ask
+# would leave only this build unoptimised, which is the half nobody
+# would think to check. This one does ask. What it did not do until
+# now is depend on the file the flag lives in, so changing the flag
+# rebuilt nothing and the old binary stayed where it was.
+#
+# What it costs here, timed on clean builds of the program:
+#
+#   -O0    31 s
+#   -O     75 s
+#   -O2    88 s
+#
+# Most of that is the declarative layer, which this file compiles from
+# source along with Stones, so the three move together whatever Stones
+# itself is doing.
+#
+# -O2 is what this build has always asked for and it is kept. What it
+# buys over -O has not been measured here, and it is not obvious: a
+# board is 361 points and the rules over them are cheap, so what runs
+# often enough to matter is the drawing. `make profile` is how to
+# answer that rather than guess at it.
+OPTIMISATION := -O2
+
 # -M caps the compiler's heap, so a compile that runs away dies with a
 # heap overflow message instead of growing until the kernel kills
 # something else on the machine. Every call here loads the whole gi-gtk
@@ -65,7 +90,8 @@ MEASURED := $(shell find $(SRC) -name '*.hs' \
 # but GTK still refuses to start without a display.
 XVFB := xvfb-run -s "-screen 0 1280x1024x24"
 
-.PHONY: all build stones ui check check-pure check-widget check-input check-cabal coverage run clean
+.PHONY: all build stones ui check check-pure check-widget check-input \
+        check-cabal coverage profile profile-heap run clean
 
 # One compiler at a time. Each call below loads the whole gi-gtk
 # interface, so `make -j` multiplies the memory rather than dividing the
@@ -96,9 +122,17 @@ build:
 
 stones: $(BUILD)/stones
 
-$(BUILD)/stones: $(SOURCES) $(APP)/Main.hs $(UI)
+# Makefile is a prerequisite because the flags live in it. Changing
+# OPTIMISATION has to rebuild, and without this make sees a binary
+# newer than every source and does nothing.
+#
+# The test builds below are left out of that on purpose. They are the
+# gate, there are three of them, and they are compiled far more often
+# than they are slow.
+$(BUILD)/stones: $(SOURCES) $(APP)/Main.hs $(UI) Makefile
 	@mkdir -p $(BUILD)
-	ghc $(INCLUDES) -i$(APP) $(WARNINGS) $(PACKAGES) -threaded -O2 \
+	ghc $(INCLUDES) -i$(APP) $(WARNINGS) $(PACKAGES) -threaded \
+	  $(OPTIMISATION) \
 	  -outputdir $(BUILD)/objects -o $@ $(APP)/Main.hs $(GHC_RTS)
 
 check: check-pure check-widget check-input check-cabal
@@ -195,6 +229,48 @@ coverage:
 	  --srcdir=. --per-module $(MEASURED) \
 	  | grep -B1 'expressions used' | grep -v '^--$$' | paste - - \
 	  | sed 's/-----//g' | sort -t'>' -k2 -n
+
+# Where the time goes, and what is on the heap, from a real session.
+#
+# A build of its own, like the coverage one, so that `make stones`
+# stays the fast gate. It covers Stones and the declarative layer
+# together, because this file compiles the library from source
+# alongside Stones, which is what makes the library's own costs
+# visible here.
+#
+# -fprof-late rather than -fprof-auto: the cost centres go in after
+# optimisation, so the program that runs is the program that ships.
+# -fprof-auto puts them in first and blocks the inlining that would
+# otherwise happen, which measures a different program and blames the
+# wrong things.
+#
+# It is optimised for the same reason, and that is the point rather
+# than a detail. A profile of an unoptimised build is a true account
+# of a program nobody runs.
+#
+# The profile is written when the program exits, so close the window
+# rather than killing it, or there will be nothing to read.
+PROFILE_BIN := $(BUILD)/stones-prof
+
+profile: $(PROFILE_BIN)
+	./$(PROFILE_BIN) $(ARGS) +RTS -p -s -RTS
+	@echo
+	@echo "wrote stones-prof.prof -- the twenty costliest entries:"
+	@sed -n '/^COST CENTRE/,$$p' stones-prof.prof | head -22
+
+# The same build, saying what is live on the heap rather than where
+# the time went. -hc groups what is live by the cost centre that
+# allocated it.
+profile-heap: $(PROFILE_BIN)
+	./$(PROFILE_BIN) $(ARGS) +RTS -hc -p -s -RTS
+	@echo
+	@echo "wrote stones-prof.hp and stones-prof.prof"
+
+$(PROFILE_BIN): $(SOURCES) $(APP)/Main.hs $(UI) Makefile
+	@mkdir -p $(BUILD)
+	ghc $(INCLUDES) -i$(APP) $(WARNINGS) $(PACKAGES) -threaded \
+	  $(OPTIMISATION) -prof -fprof-late -rtsopts \
+	  -outputdir $(BUILD)/prof-objects -o $@ $(APP)/Main.hs $(GHC_RTS)
 
 run: $(BUILD)/stones
 	$(BUILD)/stones

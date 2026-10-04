@@ -3,3 +3,9 @@ dist-newstyle/
 *.hi
 *.o
 result
+
+# What `make profile` and `make profile-heap` leave in the working
+# directory. The RTS writes them beside the program it ran.
+*.prof
+*.hp
+*.ps
