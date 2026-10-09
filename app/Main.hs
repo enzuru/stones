@@ -247,7 +247,10 @@ main = do
   -- page a tab opens on, so an engine that is not there would show up
   -- as a game that never starts, a long way from here. Trying one now
   -- turns that into a line on the terminal and an exit code.
-  working <- GnuGo.probe chosen.program chosen.opening
+  -- Where everything said to an engine and to online-go.com is
+  -- written down, when the command line asked for that.
+  log'    <- maybe (pure Log.quiet) Log.toFile chosen.logTo
+  working <- GnuGo.probe log' chosen.program chosen.opening
   -- The menu is markup in a file beside the program, and a window
   -- whose menu is missing is a window with no way to start a game.
   menu    <- dataFile Menu.menuFile
@@ -261,8 +264,7 @@ main = do
       -- Both places a game can come from, opened for as long as the
       -- window is. Neither starts anything until somebody asks: no
       -- engine runs and nothing is signed in to.
-      GnuGo.withGnuGo chosen.program $ \computer -> do
-        log' <- maybe (pure Log.quiet) Log.toFile chosen.logTo
+      GnuGo.withGnuGo log' chosen.program $ \computer ->
         Online.withOnline log' Online.browsing $ \online -> do
           let opponents = choosing computer online
           application <- Adw.applicationNew (Just identifier)

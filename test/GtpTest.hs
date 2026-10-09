@@ -35,6 +35,7 @@ import           Stones.Setup                   ( Against(..)
                                                 , Speed(..)
                                                 , Strength(..)
                                                 )
+import           Stones.Log                     ( quiet )
 import qualified Stones.Opponent.GnuGo           as GnuGo
 
 -- | Run the checks. The answer is whether they passed.
@@ -47,9 +48,9 @@ run = findExecutable "gnugo" >>= \found -> case found of
     Text.putStrLn "GtpTest: talking to gnugo."
     -- A program that is not there is a line on the terminal rather
     -- than a window with a tab that never starts.
-    missing <- GnuGo.probe "/nonexistent-gnugo" (board 9)
-    present <- GnuGo.probe program (board 9)
-    opened  <- GnuGo.open program (board 9)
+    missing <- GnuGo.probe quiet "/nonexistent-gnugo" (board 9)
+    present <- GnuGo.probe quiet program (board 9)
+    opened  <- GnuGo.open quiet program (board 9)
     case (missing, present, opened) of
       (Right (), _, _) -> failed "it found an engine that is not there"
       (_, Left why, _) -> failed ("it could not find gnugo: " <> why)
@@ -87,7 +88,7 @@ run = findExecutable "gnugo" >>= \found -> case found of
             Right heard -> Left (Text.pack (show heard))
         -- A handicap game, where the stones go down before anybody
         -- moves and the position arrives the way a server's would.
-        check "a handicap" $ GnuGo.open program (board 19) { handicap = 4 }
+        check "a handicap" $ GnuGo.open quiet program (board 19) { handicap = 4 }
           >>= \started -> case started of
                 Left  why   -> pure (Left why)
                 Right other -> do
@@ -106,7 +107,7 @@ run = findExecutable "gnugo" >>= \found -> case found of
                     other' -> Left (Text.pack (show other'))
         -- Two opponents at once, which is what a window with two tabs
         -- in it has, each holding a board of its own.
-        check "two engines at once" $ GnuGo.withGnuGo program
+        check "two engines at once" $ GnuGo.withGnuGo quiet program
           $ \opponents -> do
               first'  <- opponents.open (board 9)
               second' <- opponents.open (board 19)

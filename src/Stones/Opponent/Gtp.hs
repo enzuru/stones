@@ -45,9 +45,14 @@ import qualified Data.Text.IO                  as Text
 import           System.IO
 import           System.Process
 
+import           Stones.Log                     ( Log(..) )
+
 -- | A Go program that is running and listening for commands.
 data Gtp = Gtp
-  { input      :: Handle
+  { log'       :: Log
+    -- ^ Where what goes to the program and what comes back is written
+    -- down, when anybody asked for that.
+  , input      :: Handle
   , output     :: Handle
   , process :: ProcessHandle
   , lock    :: MVar ()
@@ -77,8 +82,8 @@ describeGtpError = \case
 -- The program is started with its input and output as pipes and its
 -- errors passed through to this program's own, so that a program that
 -- complains is heard.
-start :: FilePath -> [String] -> IO Gtp
-start program arguments = do
+start :: Log -> FilePath -> [String] -> IO Gtp
+start log'' program arguments = do
   (Just input, Just output, _, handle') <- createProcess (proc program arguments)
     { std_in  = CreatePipe
     , std_out = CreatePipe
@@ -91,7 +96,8 @@ start program arguments = do
   lock    <- newMVar ()
   counter <- newIORef 0
   stopped <- newIORef False
-  pure Gtp { input   = input
+  pure Gtp { log'    = log''
+           , input   = input
            , output  = output
            , process = handle'
            , lock    = lock
@@ -127,12 +133,18 @@ alive gtp = (== Nothing) <$> getProcessExitCode gtp.process
 command :: Gtp -> Text -> IO (Either GtpError Text)
 command gtp input = withMVar gtp.lock $ \() -> do
   identifier <- nextIdentifier gtp
-  sent       <- try $ do
+  gtp.log'.note ("--> " <> input)
+  sent <- try $ do
     Text.hPutStrLn gtp.input (Text.pack (show identifier) <> " " <> input)
     hFlush gtp.input
-  case sent of
-    Left  failure -> pure (Left (Broken (Text.pack (show (failure :: IOException)))))
-    Right ()      -> readResponse gtp
+  answer <- case sent of
+    Left failure ->
+      pure (Left (Broken (Text.pack (show (failure :: IOException)))))
+    Right () -> readResponse gtp
+  gtp.log'.note $ case answer of
+    Left  why  -> "<-- refused: " <> describeGtpError why
+    Right said -> "<-- " <> (if Text.null said then "(nothing)" else said)
+  pure answer
 
 -- | Send a command whose answer does not matter, and keep only the
 -- failure.

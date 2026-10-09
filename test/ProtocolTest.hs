@@ -23,6 +23,7 @@ import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
 import           Hedgehog
 
+import           Stones.Log                     ( quiet )
 import qualified Stones.Opponent.Gtp             as Gtp
 
 -- | An engine that answers every command with these lines, over and
@@ -37,7 +38,7 @@ answering reply = withEngine
 
 -- | Run something with an engine made from this shell script.
 withEngine :: String -> (Gtp.Gtp -> IO a) -> IO a
-withEngine script = bracket (Gtp.start "sh" ["-c", script]) Gtp.stop
+withEngine script = bracket (Gtp.start quiet "sh" ["-c", script]) Gtp.stop
 
 prop_readsAPlainAnswer :: Property
 prop_readsAPlainAnswer = withTests 1 . property $ do
@@ -106,7 +107,7 @@ prop_commandUnderscoreKeepsOnlyTheFailure = withTests 1 . property $ do
 prop_anEngineIsRunningUntilItIsStopped :: Property
 prop_anEngineIsRunningUntilItIsStopped = withTests 1 . property $ do
   (before, after) <- evalIO $ do
-    gtp    <- Gtp.start "sh" ["-c", "while read -r line; do printf '=\\n\\n'; done"]
+    gtp    <- Gtp.start quiet "sh" ["-c", "while read -r line; do printf '=\\n\\n'; done"]
     before <- Gtp.alive gtp
     Gtp.stop gtp
     after <- Gtp.alive gtp
@@ -120,7 +121,7 @@ prop_stoppingAnEngineTwiceDoesNothingTheSecondTime = withTests 1 . property $ do
   -- the window closes. Waiting twice on one process is an error, so
   -- the second stop has to be the one that does nothing.
   evalIO $ do
-    gtp <- Gtp.start "sh" ["-c", "while read -r line; do printf '=\\n\\n'; done"]
+    gtp <- Gtp.start quiet "sh" ["-c", "while read -r line; do printf '=\\n\\n'; done"]
     Gtp.stop gtp
     Gtp.stop gtp
     Gtp.stop gtp

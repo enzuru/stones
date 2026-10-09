@@ -43,6 +43,7 @@ import           Pipes.Concurrent               ( Output
 
 import           Go.Types
 import           Go.Vertex
+import           Stones.Log                     ( Log(..) )
 import           Stones.Opponent
 import qualified Stones.Opponent.Gtp           as Gtp
 import           Stones.Setup                   ( Setup(..)
@@ -76,9 +77,9 @@ levelFor asked = Level (max low (min high (strengthNumber asked)))
 -- The board size is remembered here, because a vertex cannot be read
 -- without it: @A1@ is the bottom left corner of whatever board is in
 -- play, and the row number is counted from the bottom.
-open :: FilePath -> Setup -> IO (Either Text Opponent)
-open program setup = do
-  started <- try (Gtp.start program arguments)
+open :: Log -> FilePath -> Setup -> IO (Either Text Opponent)
+open log' program setup = do
+  started <- try (Gtp.start log' program arguments)
   case started of
     Left failure -> pure
       (Left
@@ -96,7 +97,7 @@ open program setup = do
       (output, input, seal) <- spawn' unbounded
       let opponent = Opponent
             { name  = "GNU Go"
-            , tell  = telling gtp current output setup.human
+            , tell  = telling log' gtp current output setup.human
             , hear  = fromInput input
             , leave = Gtp.stop gtp >> atomically seal
               -- It takes what is said to it and says nothing back.
@@ -157,24 +158,37 @@ placing gtp current output setup
 -- question: a move it will not take is a refusal, and a move it will
 -- not make is news that arrives later.
 telling
-  :: Gtp.Gtp -> IORef Int -> Output Heard -> Color -> Told -> IO (Either Text ())
-telling gtp current output human = \case
-  Moved move -> notify gtp current human move
-  TookBack n -> undo gtp n
-  Asked      -> genMove gtp current them
-    >>= put output . either Lost (Played them)
-  Counting   -> score gtp >>= put output . either Lost Counted
-  -- The protocol has no word for any of these. A resignation ends the
-  -- game here and there is nothing left to ask GNU Go for, and GNU Go
-  -- has nothing to say and nobody to say it to.
-  Resigned   -> pure (Right ())
-  Said _     -> pure (Right ())
-  -- Nobody has to agree with GNU Go about which stones are dead. It
-  -- counts the game itself, which is what @final_score@ is, so a game
-  -- against it never stops to be counted by hand.
-  Marking _ _ -> pure (Right ())
-  Accepting _ -> pure (Right ())
-  where them = opposite human
+  :: Log
+  -> Gtp.Gtp
+  -> IORef Int
+  -> Output Heard
+  -> Color
+  -> Told
+  -> IO (Either Text ())
+telling log' gtp current output human told = do
+  -- What the game decided, before anything is said to the engine. How
+  -- many moves to take back is worked out above this, so this is the
+  -- one place both halves of a disagreement are visible.
+  log'.note ("    game says: " <> Text.pack (show told))
+  saying told
+ where
+  saying = \case
+    Moved move -> notify gtp current human move
+    TookBack n -> undo gtp n
+    Asked      -> genMove gtp current them
+      >>= put output . either Lost (Played them)
+    Counting   -> score gtp >>= put output . either Lost Counted
+    -- The protocol has no word for any of these. A resignation ends
+    -- the game here and there is nothing left to ask GNU Go for, and
+    -- GNU Go has nothing to say and nobody to say it to.
+    Resigned    -> pure (Right ())
+    Said _      -> pure (Right ())
+    -- Nobody has to agree with GNU Go about which stones are dead. It
+    -- counts the game itself, which is what @final_score@ is, so a
+    -- game against it never stops to be counted by hand.
+    Marking _ _ -> pure (Right ())
+    Accepting _ -> pure (Right ())
+  them = opposite human
 
 -- | Put something on the stream. A stream nobody is reading from any
 -- more takes nothing, which is what a closed game looks like.
@@ -249,8 +263,8 @@ colorName White = "white"
 -- This is what turns that into a line on the terminal and an exit
 -- code, which is what somebody running the program from a script
 -- wants.
-probe :: FilePath -> Setup -> IO (Either Text ())
-probe program setup = open program setup >>= \case
+probe :: Log -> FilePath -> Setup -> IO (Either Text ())
+probe log' program setup = open log' program setup >>= \case
   Left  why      -> pure (Left why)
   Right opponent -> Right () <$ opponent.leave
 
@@ -261,8 +275,8 @@ probe program setup = open program setup >>= \case
 -- running when the action ends is stopped. A tab that closes stops its
 -- own opponent, and stopping one twice does nothing, so a process is
 -- never left behind and never waited on twice.
-withGnuGo :: FilePath -> (Opponents -> IO a) -> IO a
-withGnuGo program use = bracket (newIORef []) stopEveryone $ \running ->
+withGnuGo :: Log -> FilePath -> (Opponents -> IO a) -> IO a
+withGnuGo log' program use = bracket (newIORef []) stopEveryone $ \running ->
   use Opponents { open  = openOne running
                 , close = (.leave)
                   -- There is nobody to be, so there is nothing to sign
@@ -276,7 +290,7 @@ withGnuGo program use = bracket (newIORef []) stopEveryone $ \running ->
                 , enter = pure (Left "Games on this computer need no account.")
                 }
  where
-  openOne running setup = open program setup >>= \case
+  openOne running setup = open log' program setup >>= \case
     Left  why      -> pure (Left why)
     Right opponent -> Right opponent <$ modifyIORef' running (opponent :)
 
