@@ -336,6 +336,7 @@ prop_aHandicapGameGetsItsColoursTheRightWayRound =
                             , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
                             , opens  = White
                             , yours  = White
+                            , dead   = Nothing
                             }
             , Played White (Play (Coord 3 3))
             ]

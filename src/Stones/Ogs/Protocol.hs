@@ -237,8 +237,15 @@ openingFrom player body = do
     , stones = standing reached.board
     , opens  = reached.turn
     , yours  = if player == black then Black else White
+    , dead   = counting
     }
  where
+  -- A game joined part way through the counting at the end. The marked
+  -- stones come in the same payload, under a name of their own.
+  counting = case fieldOf "phase" body >>= asString of
+    Just "stone removal" ->
+      Just (maybe [] decodeStones (fieldOf "removed" body >>= asString))
+    _ -> Nothing
   need key = maybe (Left ("a game with no " <> key <> " in it")) Right
                    (fieldOf key body)
   must why = maybe (Left why) Right
@@ -482,11 +489,10 @@ incoming table name arguments = do
     -- what it came to in it. Reading that as a game starting would put
     -- the board back up and throw the result away.
     --
-    -- A game that is being counted is read as a game in play, which is
-    -- wrong, and out of reach: it only arrives when a game already in
-    -- that part is joined, and nothing here joins a game it did not
-    -- just ask for. Whoever adds that has this to do first, and what
-    -- to do it with is in the same payload, in @phase@ and @removed@.
+    -- A game being counted comes back as a game being counted. The
+    -- position is read the same way, and what says the two apart is
+    -- carried on it: a game picked out of the ones this player is
+    -- already in can be anywhere, that part included.
     "gamedata" -> case fieldOf "phase" body >>= asString of
       Just "finished" -> Counted <$> resultFrom body
       _               -> Just (either Lost Began (openingFrom table.me body))

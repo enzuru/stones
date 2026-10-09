@@ -309,6 +309,41 @@ prop_aRefusalIsAboutOneGameAndIsThatGamesNews = withTests 1 . property $ do
   refusalOf 1234 "notification" [bare]
     === Just "The other side would not play that game."
 
+prop_aGameJoinedWhileItIsBeingCountedComesBackThatWay :: Property
+prop_aGameJoinedWhileItIsBeingCountedComesBackThatWay =
+  withTests 1 . property $ do
+    -- A game is not always joined while it is still being played. One
+    -- picked out of the games this player is already in can be
+    -- anywhere, and the list it comes from goes by whether the game
+    -- has ended, which a game being counted has not.
+    let counting = object
+          [ "width" .= (9 :: Int)
+          , "phase" .= ("stone removal" :: Text)
+          , "removed" .= ("aabb" :: Text)
+          , "initial_player" .= ("black" :: Text)
+          , "black_player_id" .= (77 :: Int)
+          , "white_player_id" .= (88 :: Int)
+          , "moves" .= ([] :: [Value])
+          ]
+    case openingFrom 77 counting of
+      Left  why     -> annotate (show why) >> failure
+      Right opening -> do
+        -- The stones both sides are being asked to agree are dead,
+        -- read the same way as any other set of stones.
+        opening.dead === Just [Coord 0 0, Coord 1 1]
+        opening.yours === Black
+    -- With nothing marked yet, which is where the counting starts.
+    let nothing = replacing "removed" (toJSON ("" :: Text)) counting
+    (dead <$> openingFrom 77 nothing) === Right (Just [])
+    -- And a game still being played has none at all, which is what
+    -- tells a board that takes moves from one that takes marks.
+    let playing = replacing "phase" (toJSON ("play" :: Text)) counting
+    (dead <$> openingFrom 77 playing) === Right Nothing
+
+-- | The stones an opening says are dead.
+dead :: Opening -> Maybe [Coord]
+dead opening = opening.dead
+
 -- * A game somebody offered
 -----------------------------
 
@@ -634,6 +669,7 @@ prop_aHandicapGameStartsWithStonesDownAndWhiteToMove =
                         , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
                         , opens  = White
                         , yours  = Black
+                            , dead   = Nothing
                         }
 
 prop_whichColourThePlayerHasComesFromTheirNumber :: Property
@@ -661,6 +697,7 @@ prop_aGameUnderWayIsPlayedOutRatherThanTakenAsRead =
                         , stones = [(Black, Coord 3 3), (White, Coord 5 5)]
                         , opens  = Black
                         , yours  = White
+                            , dead   = Nothing
                         }
 
 prop_aGameTheseRulesRefuseIsSaidSoRatherThanHalfTaken :: Property
@@ -699,6 +736,7 @@ prop_theGameArrivesBeforeAnythingElseDoes = withTests 1 . property $ do
                          , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
                          , opens  = White
                          , yours  = Black
+                            , dead   = Nothing
                          }
           )
 

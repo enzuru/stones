@@ -291,6 +291,43 @@ prop_movesComingOffOverThereComeOffHere = withTests 1 . property $ do
   (after game (Arrived (Undid 5))).game.moves === []
   (after game (Arrived (Undid 0))).game.moves === []
 
+prop_aGameJoinedMidCountIsCountedRatherThanPlayed :: Property
+prop_aGameJoinedMidCountIsCountedRatherThanPlayed =
+  withTests 1 . property $ do
+    -- Opened out of the games this player is already in, part way
+    -- through the counting at the end. A board handed over as playable
+    -- then is a board that takes clicks the server will refuse.
+    let opening = Opening { width  = 9
+                          , stones = [(Black, Coord 0 0), (White, Coord 8 8)]
+                          , opens  = White
+                          , yours  = Black
+                          , dead   = Just [Coord 8 8]
+                          }
+        joined  = after game (Arrived (Began opening))
+    settling joined === True
+    deadIn joined === [Coord 8 8]
+    playable joined === False
+    -- And nobody is asked to move, because nobody moves again.
+    said <- saying (\them -> opened them (starting (board Black 9)))
+                   [Arrived (Began opening)]
+    said === []
+
+prop_aGameJoinedWhileStillGoingIsPlayedAsUsual :: Property
+prop_aGameJoinedWhileStillGoingIsPlayedAsUsual =
+  withTests 1 . property $ do
+    -- The same payload with nothing marked on it. The other side is
+    -- asked, because the game starts on their move.
+    let opening = Opening { width  = 9
+                          , stones = [(Black, Coord 0 0)]
+                          , opens  = White
+                          , yours  = Black
+                          , dead   = Nothing
+                          }
+    settling (after game (Arrived (Began opening))) === False
+    said <- saying (\them -> opened them (starting (board Black 9)))
+                   [Arrived (Began opening)]
+    said === [Asked]
+
 -- * Talking
 -------------
 
@@ -725,6 +762,7 @@ prop_whereTheOtherSideSaysTheGameIsIsWhereItIs = withTests 1 . property $ do
                          , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
                          , opens  = White
                          , yours  = White
+                            , dead   = Nothing
                          }
           )
         )
@@ -745,6 +783,7 @@ prop_aGameAlreadyUnderWayIsTakenAsItIs = withTests 1 . property $ do
                          , stones = [(White, Coord 5 5)]
                          , opens  = Black
                          , yours  = Black
+                            , dead   = Nothing
                          }
           )
         )
@@ -764,6 +803,7 @@ prop_aGameThatStartsOnTheirMoveAsksThem = withTests 1 . property $ do
                        , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
                        , opens  = White
                        , yours  = Black
+                            , dead   = Nothing
                        }
         )
     ]
@@ -778,6 +818,7 @@ prop_aGameThatStartsOnOurMoveAsksNobody = withTests 1 . property $ do
                        , stones = []
                        , opens  = Black
                        , yours  = Black
+                            , dead   = Nothing
                        }
         )
     ]

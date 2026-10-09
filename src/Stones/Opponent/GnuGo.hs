@@ -147,6 +147,9 @@ placing gtp current output setup
                            , stones = [ (Black, stone) | stone <- stones ]
                            , opens  = White
                            , yours  = setup.human
+                             -- A handicap is the start of a game, not
+                             -- the end of one.
+                           , dead   = Nothing
                            }
             )
           pure (Right ())

@@ -180,6 +180,16 @@ data Opening = Opening
   , yours  :: Color
     -- ^ The colour the player at this window has in this game, which
     -- is something only the other side knows when it did the pairing.
+  , dead   :: Maybe [Coord]
+    -- ^ The stones marked dead, in a game that has stopped and is
+    -- being counted. A game still being played has none, and that is
+    -- what tells the two apart.
+    --
+    -- A game is not always joined while it is still being played. One
+    -- picked out of the games this player is already in can be
+    -- anywhere, the counting at the end included, and a board handed
+    -- over as playable then is a board that takes clicks the server
+    -- will refuse.
   }
   deriving (Eq, Show)
 
