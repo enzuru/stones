@@ -31,6 +31,8 @@ import           GI.Gtk.Declarative.App.Simple  ( Cmd
                                                 , none
                                                 )
 import           Hedgehog
+import qualified Hedgehog.Gen                  as Gen
+import qualified Hedgehog.Range                as Range
 import qualified Pipes.Prelude                 as Pipes
 
 import           Go.Board                       ( stoneAt
@@ -512,6 +514,80 @@ sameBoardAs one other = do
   map (`stoneCount` one.game.board) [Black, White]
     === map (`stoneCount` other.game.board) [Black, White]
   one.game.turn === other.game.turn
+
+-- * Taking moves back
+-----------------------
+
+-- | A game against a program, with this many of the player's moves
+-- each answered.
+--
+-- The player has Black and plays down one side; the answers come back
+-- down the other, so nothing is ever captured and the count of stones
+-- is the count of moves.
+playedOut :: Int -> Session
+playedOut rounds = foldl answered start [1 .. rounds]
+ where
+  -- A full board, so that a dozen rounds down one side still fit.
+  start = landed (opened silent { talks = False } (starting (board Black 19)))
+  answered session n = after
+    (after session (Clicked (Coord 1 (n - 1))))
+    (Arrived (Played White (Play (Coord 7 (n - 1)))))
+
+-- | How many stones of each colour are on a game's board.
+stonesOn :: Session -> (Int, Int)
+stonesOn session =
+  (stoneCount Black session.game.board, stoneCount White session.game.board)
+
+prop_undoTakesOffTheLastMoveAndItsAnswerAndNoMore :: Property
+prop_undoTakesOffTheLastMoveAndItsAnswerAndNoMore = property $ do
+  rounds <- forAll (Gen.int (Range.linear 1 12))
+  let played = playedOut rounds
+      undone = after played UndoPressed
+  stonesOn played === (rounds, rounds)
+  -- One of each comes off, however long the game has been going. Not
+  -- the whole game, and not one stone leaving the other side to move
+  -- again.
+  stonesOn undone === (rounds - 1, rounds - 1)
+  undone.game.turn === Black
+
+prop_undoGoesBackOneRoundPerPress :: Property
+prop_undoGoesBackOneRoundPerPress = property $ do
+  rounds  <- forAll (Gen.int (Range.linear 1 8))
+  presses <- forAll (Gen.int (Range.linear 1 8))
+  let undone = foldl (\session _ -> after session UndoPressed)
+                     (playedOut rounds)
+                     [1 .. presses]
+      left   = max 0 (rounds - presses)
+  -- Pressing it twice goes back two rounds and not four, and pressing
+  -- it on an empty board does nothing at all.
+  stonesOn undone === (left, left)
+
+prop_undoTellsTheOtherSideTheSameNumberItTookOffHere :: Property
+prop_undoTellsTheOtherSideTheSameNumberItTookOffHere =
+  withTests 1 . property $ do
+    -- The two boards have to come off together. A number said here and
+    -- a different one said over there is two boards that disagree, and
+    -- the next move lands on whichever one the other side kept.
+    said <- saying (\them -> Transition (playedOut 3) { standing = Here them } none)
+                   [UndoPressed]
+    said === [TookBack 2]
+
+prop_undoWithOnlyYourOwnMoveDownTakesOffJustIt :: Property
+prop_undoWithOnlyYourOwnMoveDownTakesOffJustIt =
+  withTests 1 . property $ do
+    -- Played and not yet answered. There is one move to take back and
+    -- the other side is asked to go again, because taking it back put
+    -- the turn back to them.
+    let mine = after (playedOut 0) (Clicked (Coord 3 3))
+    stonesOn mine === (1, 0)
+    stonesOn (after mine UndoPressed) === (0, 0)
+    said <- saying
+      (\them -> Transition
+        (after (playedOut 0) (Clicked (Coord 3 3))) { standing = Here them }
+        none
+      )
+      [UndoPressed]
+    said === [TookBack 1]
 
 -- * The clock
 ---------------
