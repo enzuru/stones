@@ -50,8 +50,10 @@ import           GI.Gtk.Declarative.EventSource ( fromCancellation )
 import           Stones.Files                   ( dataFile )
 
 -- | What the menu shows.
-newtype MenuProps = MenuProps
-  { canResign :: Bool
+data MenuProps = MenuProps
+  { canPlayAgain :: Bool
+    -- ^ Whether the game showing can be started over.
+  , canResign :: Bool
     -- ^ Whether the game showing is one that can be given up. An item
     -- that cannot be used is greyed rather than gone, so the menu is
     -- the same menu every time it is opened.
@@ -61,6 +63,7 @@ newtype MenuProps = MenuProps
 -- | What the menu reports.
 data MenuEvent
   = NewGameChosen
+  | PlayAgainChosen
   | ResignChosen
   deriving (Eq, Show)
 
@@ -82,6 +85,10 @@ data Choice = Choice
 choices :: MenuProps -> [Choice]
 choices props =
   [ Choice { name = "new-game", reports = NewGameChosen, usable = True }
+  , Choice { name    = "play-again"
+           , reports = PlayAgainChosen
+           , usable  = props.canPlayAgain
+           }
   , Choice { name = "resign", reports = ResignChosen, usable = props.canResign }
   ]
 

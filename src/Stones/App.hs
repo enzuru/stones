@@ -179,6 +179,10 @@ data Event
   | TabsReordered (Vector Text)
   | ResignChosen
     -- ^ Give up the game showing, which is what the menu means by it.
+  | PlayAgainChosen
+    -- ^ Start the game showing over, which is what the menu means by
+    -- it. Which tab that is is worked out when this arrives rather
+    -- than when the menu was drawn, the same way giving up is.
   | AgainPressed TabId
     -- ^ Start this tab's game over, with what it was started from.
   | GamesFound (Either Text [Ongoing])
@@ -302,6 +306,10 @@ update' state = \case
   ResignChosen                 -> case shownGame state of
     Just (tab, _) -> inGame state tab (`step` ResignPressed)
     Nothing       -> Transition state none
+
+  PlayAgainChosen              -> case shownGame state of
+    Just (tab, session) | canPlayAgain session -> again state tab session
+    _                                          -> Transition state none
 
 -- | Ask which games this player is already in.
 askingForGames :: State -> Cmd Event
@@ -677,12 +685,9 @@ header state = container
   ]
   [ headerBarStart
     (action state "edit-undo-symbolic" "Undo" canUndo (`InTab` UndoPressed))
-  , headerBarStart
-    (action state
-            "view-refresh-symbolic"
-            "Play again, with the same settings"
-            canPlayAgain
-            AgainPressed)
+  -- Starting the game over is in the menu rather than here. It was a
+  -- button next to this one, and a player reaching for Undo by
+  -- position found the one that throws the whole game away.
   -- Packed from the right edge inward, so the menu is the button in
   -- the corner, which is where a GNOME program keeps it.
   , headerBarEnd (mainMenu state)
@@ -765,10 +770,14 @@ mainMenu state = chosen <$> Menu.mainMenu
   , #primary := True
   , #tooltipText := "Main Menu"
   ]
-  Menu.MenuProps { canResign = isJust (shownGame state) }
+  Menu.MenuProps
+    { canPlayAgain = maybe False (canPlayAgain . snd) (shownGame state)
+    , canResign    = isJust (shownGame state)
+    }
  where
-  chosen Menu.NewGameChosen = NewTabPressed
-  chosen Menu.ResignChosen  = ResignChosen
+  chosen Menu.NewGameChosen   = NewTabPressed
+  chosen Menu.PlayAgainChosen = PlayAgainChosen
+  chosen Menu.ResignChosen    = ResignChosen
 
 -- | Where a tab stands, which is the window's title.
 statusOf :: Stage -> Text

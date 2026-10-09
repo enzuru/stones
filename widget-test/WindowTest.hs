@@ -21,6 +21,7 @@ module WindowTest
 where
 
 import           Data.IORef
+import           Data.Maybe                     ( catMaybes )
 import           Data.List                      ( isInfixOf )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as Text
@@ -649,6 +650,25 @@ prop_anOfferArrivingPatchesTheWindow = withTests 1 . property $ do
     pure (decision made (view' oneGame) (view' asked))
   said === Modified
 
+prop_nothingThatEndsTheGameSitsBesideUndo :: Property
+prop_nothingThatEndsTheGameSitsBesideUndo = withTests 1 . property $ do
+  -- Which button sits where is not a detail. Starting the game over
+  -- throws the whole game away, and it was the button next to Undo: a
+  -- player reaching for Undo by position found it, and said that undo
+  -- undid too much, which it does.
+  icons <- evalIO . built oneGame $ \widget' -> do
+    bars <- descendantsOf Adw.HeaderBar widget'
+    case bars of
+      bar : _ -> do
+        buttons <- descendantsOf Gtk.Button bar
+        named   <- traverse Gtk.getButtonIconName buttons
+        pure (catMaybes named)
+      [] -> pure []
+  annotateShow icons
+  -- It is in the menu now, with the other way of ending a game.
+  assert (notElem "view-refresh-symbolic" icons)
+  assert (elem "edit-undo-symbolic" icons)
+
 prop_theMenuComesFromTheMarkup :: Property
 prop_theMenuComesFromTheMarkup = withTests 1 . property $ do
   -- The menu is a GMenuModel read from data/ui/menu.ui. A file that
@@ -661,7 +681,8 @@ prop_theMenuComesFromTheMarkup = withTests 1 . property $ do
         model <- Gtk.menuButtonGetMenuModel button
         traverse Gio.menuModelGetNItems model
       _ -> pure Nothing
-  -- One section for New Game and one for Resign.
+  -- One section for New Game, and one for the two that end the game
+  -- that is open.
   sections === Just 2
 
 -- | The game showing in a window, for the tests that compare against

@@ -15,6 +15,10 @@ corresponding .blp file and regenerate this file with blueprint-compiler.
     </section>
     <section>
       <item>
+        <attribute name="label" translatable="yes">Play Again</attribute>
+        <attribute name="action">window.play-again</attribute>
+      </item>
+      <item>
         <attribute name="label" translatable="yes">Resign</attribute>
         <attribute name="action">window.resign</attribute>
       </item>

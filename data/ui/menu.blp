@@ -17,7 +17,15 @@ menu main {
     }
   }
 
+  // Both of these end the game that is open. They are together, and
+  // away from the buttons in the bar, because a player reaches for
+  // Undo by position and one of these throws the whole game away.
   section {
+    item {
+      label: _("Play Again");
+      action: "window.play-again";
+    }
+
     item {
       label: _("Resign");
       action: "window.resign";

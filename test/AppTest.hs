@@ -1112,15 +1112,31 @@ prop_theMenuOffersTheSameItemsEveryTime :: Property
 prop_theMenuOffersTheSameItemsEveryTime = withTests 1 . property $ do
   -- Greyed rather than gone, so the menu does not change shape under
   -- somebody who has opened it before.
-  map (.name) (choices (MenuProps { canResign = True }))
-    === map (.name) (choices (MenuProps { canResign = False }))
-  map (.name) (choices (MenuProps { canResign = True }))
-    === ["new-game", "resign"]
+  map (.name) (choices (MenuProps { canPlayAgain = True, canResign = True }))
+    === map (.name) (choices (MenuProps { canPlayAgain = False, canResign = False }))
+  map (.name) (choices (MenuProps { canPlayAgain = True, canResign = True }))
+    === ["new-game", "play-again", "resign"]
 
 prop_aGameCanBeGivenUpAndAPageCannot :: Property
 prop_aGameCanBeGivenUpAndAPageCannot = withTests 1 . property $ do
-  map (.usable) (choices (MenuProps { canResign = True })) === [True, True]
-  map (.usable) (choices (MenuProps { canResign = False })) === [True, False]
+  -- A new game is always there to be had. The two that end the game
+  -- showing are there only when there is one.
+  map (.usable) (choices (MenuProps { canPlayAgain = True, canResign = True }))
+    === [True, True, True]
+  map (.usable) (choices (MenuProps { canPlayAgain = False, canResign = False }))
+    === [True, False, False]
+
+prop_theMenuStartsTheGameShowingOver :: Property
+prop_theMenuStartsTheGameShowingOver = property $ do
+  -- Starting over is in the menu rather than beside Undo, so this is
+  -- the path it arrives by now.
+  (counting', counts) <- evalIO countingSource
+  let playing = next
+        (started 1 (next (startingState counting' asking) NewTabPressed))
+        (TabOpened 1 (Right program))
+  _         <- ran playing PlayAgainChosen
+  (_, back) <- evalIO (readIORef counts)
+  back === 1
 
 prop_theMenuResignsTheGameShowing :: Property
 prop_theMenuResignsTheGameShowing = withTests 1 . property $ do
