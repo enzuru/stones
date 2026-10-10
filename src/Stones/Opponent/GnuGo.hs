@@ -145,7 +145,7 @@ placing gtp current output setup
                            , yours  = setup.human
                              -- A handicap is the start of a game, not
                              -- the end of one.
-                           , dead   = Nothing
+                           , marked = Nothing
                            }
             )
           pure (Right ())

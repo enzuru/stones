@@ -288,9 +288,9 @@ prop_thePageListsTheGamesAlreadyGoing = withTests 1 . property $ do
   -- Only once there is somebody to have games, and only when there are
   -- any: an empty group with a title and nothing under it is worse
   -- than no group.
-  let one = Ongoing { with  = "lenzuru"
-                    , about = asking { against = Online, versus = "lenzuru" }
-                    , game  = 90884965
+  let one = Ongoing { with   = "lenzuru"
+                    , about  = asking { against = Online, versus = "lenzuru" }
+                    , number = 90884965
                     }
       signedIn' = next onlinePage (SignedInAs (Right "enzuru"))
       listed    = next signedIn' (GamesFound (Right [one]))
@@ -330,19 +330,19 @@ prop_openingAGameAlreadyGoingShowsThatTab :: Property
 prop_openingAGameAlreadyGoingShowsThatTab = withTests 1 . property $ do
   -- Somebody who pressed Open meant to look at that game, not to go
   -- on staring at the page they pressed it on.
-  let one = Ongoing { with  = "lenzuru"
-                    , about = asking { against = Online, versus = "lenzuru" }
-                    , game  = 90884965
+  let one = Ongoing { with   = "lenzuru"
+                    , about  = asking { against = Online, versus = "lenzuru" }
+                    , number = 90884965
                     }
       listed = next (next onlinePage (SignedInAs (Right "enzuru")))
                     (GamesFound (Right [one]))
-      opened = next listed (InSetup 1 (ResumePressed one))
+      went   = next listed (InSetup 1 (ResumePressed one))
   -- Through every render the window makes of it, because a selection
   -- is a thing said once and a render that said nothing would leave it
   -- wherever it drifted to.
-  let arrived = next opened (TabOpened 2 (Right silent))
+  let arrived = next went (TabOpened 2 (Right silent))
       played  = next arrived (InTab 2 (Clicked (Coord 3 3)))
-  chosen <- evalIO (showingIn [listed, opened, arrived, played])
+  chosen <- evalIO (showingIn [listed, went, arrived, played])
   -- The game that was opened, named after who it is against once its
   -- opponent has arrived.
   chosen === Just "nobody"
@@ -358,9 +358,9 @@ showingIn (first : rest) = do
   runUI $ do
     views <- descendantsOf Adw.TabView =<< widgetOf ended
     case views of
-      [view] -> do
-        page <- Adw.tabViewGetSelectedPage view
-        traverse Adw.tabPageGetTitle page
+      [only] -> do
+        chosen <- Adw.tabViewGetSelectedPage only
+        traverse Adw.tabPageGetTitle chosen
       _ -> pure Nothing
  where
   go made _ [] = pure made
@@ -621,7 +621,7 @@ prop_anOfferIsShownOverTheBoardWithAWayToTakeIt =
     let offer = Invitation { from  = "lenzuru"
                            , about = asking { against = Online }
                            , token = 36052608
-                           , game  = 90881581
+                           , number = 90881581
                            }
         asked = next oneGame (InTab 1 (Arrived (Invited offer)))
     (titles, areas) <- evalIO . built asked $ \widget' -> do
@@ -639,7 +639,7 @@ prop_anOfferArrivingPatchesTheWindow = withTests 1 . property $ do
   let offer = Invitation { from  = "lenzuru"
                          , about = asking { against = Online }
                          , token = 36052608
-                         , game  = 90881581
+                         , number = 90881581
                          }
       asked = next oneGame (InTab 1 (Arrived (Invited offer)))
   said <- evalIO . runUI $ do

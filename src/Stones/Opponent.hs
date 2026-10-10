@@ -117,15 +117,15 @@ choosing computer online = Opponents
 -- asked for, and not about any game it is already playing. Somebody
 -- somewhere picked this player and said they would like a game.
 data Invitation = Invitation
-  { from  :: Text
+  { from   :: Text
     -- ^ Who is offering.
-  , about :: Setup
+  , about  :: Setup
     -- ^ What they are offering, as far as it can be said in the terms
     -- the rest of this program uses.
-  , token :: Int
+  , token  :: Int
     -- ^ What to answer with, which is the offer's own number rather
     -- than anything about the game.
-  , game  :: Int
+  , number :: Int
     -- ^ The game it would be. The server picks one when the offer is
     -- made, before anybody has said yes.
   }
@@ -177,7 +177,7 @@ data Opening = Opening
   , yours  :: Color
     -- ^ The colour the player at this window has in this game, which
     -- is something only the other side knows when it did the pairing.
-  , dead   :: Maybe [Coord]
+  , marked :: Maybe [Coord]
     -- ^ The stones marked dead, in a game that has stopped and is
     -- being counted. A game still being played has none, and that is
     -- what tells the two apart.

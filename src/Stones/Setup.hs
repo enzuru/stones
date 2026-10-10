@@ -189,13 +189,17 @@ speedName = \case
 -- waiting for a move ever since. Nothing has to be agreed to open one:
 -- it is already going, and this is only a way back into it.
 data Ongoing = Ongoing
-  { with  :: Text
+  { with   :: Text
     -- ^ Who it is against.
-  , about :: Setup
+  , about  :: Setup
     -- ^ What it is, as far as it can be said in the terms the rest of
     -- this program uses.
-  , game  :: Int
+  , number :: Int
     -- ^ The number the server knows it by.
+    --
+    -- Not called `game`: a game of Go is a `Game`, and a window that
+    -- held both would not be able to say which of them an update to a
+    -- field called `game` was about.
   }
   deriving (Eq, Show)
 

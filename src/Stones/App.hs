@@ -320,7 +320,10 @@ goingBackTo state it = Transition
   state { openTabs = state.openTabs <> [(tab, Playing (starting it.about))]
         , showing  = Just tab
         , nextTab  = tab + 1
-        , already  = [ other | other <- state.already, other.game /= it.game ]
+        , already  = [ other
+                     | other <- state.already
+                     , other.number /= it.number
+                     ]
         }
   (keyed (findingIn tab)
          (perform (Just . TabOpened tab <$> state.opponents.resume it))

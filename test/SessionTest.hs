@@ -296,7 +296,7 @@ prop_aGameJoinedMidCountIsCountedRatherThanPlayed =
                           , stones = [(Black, Coord 0 0), (White, Coord 8 8)]
                           , opens  = White
                           , yours  = Black
-                          , dead   = Just [Coord 8 8]
+                          , marked = Just [Coord 8 8]
                           }
         joined  = after game (Arrived (Began counted))
     settling joined === True
@@ -316,7 +316,7 @@ prop_aGameJoinedWhileStillGoingIsPlayedAsUsual =
                         , stones = [(Black, Coord 0 0)]
                         , opens  = White
                         , yours  = Black
-                        , dead   = Nothing
+                        , marked = Nothing
                         }
     settling (after game (Arrived (Began going))) === False
     said <- saying (\them -> opened them (starting (board Black 9)))
@@ -758,7 +758,7 @@ prop_whereTheOtherSideSaysTheGameIsIsWhereItIs = withTests 1 . property $ do
                          , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
                          , opens  = White
                          , yours  = White
-                            , dead   = Nothing
+                         , marked = Nothing
                          }
           )
         )
@@ -779,7 +779,7 @@ prop_aGameAlreadyUnderWayIsTakenAsItIs = withTests 1 . property $ do
                          , stones = [(White, Coord 5 5)]
                          , opens  = Black
                          , yours  = Black
-                            , dead   = Nothing
+                         , marked = Nothing
                          }
           )
         )
@@ -799,7 +799,7 @@ prop_aGameThatStartsOnTheirMoveAsksThem = withTests 1 . property $ do
                        , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
                        , opens  = White
                        , yours  = Black
-                            , dead   = Nothing
+                       , marked = Nothing
                        }
         )
     ]
@@ -814,7 +814,7 @@ prop_aGameThatStartsOnOurMoveAsksNobody = withTests 1 . property $ do
                        , stones = []
                        , opens  = Black
                        , yours  = Black
-                            , dead   = Nothing
+                       , marked = Nothing
                        }
         )
     ]

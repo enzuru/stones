@@ -420,10 +420,11 @@ prop_startingOverDoesNothingToAGameSomebodyIsWaitingOn =
 
 -- | A game this player is already in.
 already' :: Ongoing
-already' = Ongoing { with  = "lenzuru"
-                   , about = asking { against = Online, versus = "lenzuru" }
-                   , game  = 90884965
-                   }
+already' = Ongoing
+  { with   = "lenzuru"
+  , about  = asking { against = Online, versus = "lenzuru" }
+  , number = 90884965
+  }
 
 prop_signingInAsksWhichGamesAreAlreadyGoing :: Property
 prop_signingInAsksWhichGamesAreAlreadyGoing = property $ do
@@ -445,21 +446,22 @@ prop_gamesThatCouldNotBeAskedForLeaveTheListAlone =
     -- A list of what is true somewhere else. Not being able to see it
     -- is not the same as there being nothing in it.
     let held = next oneGame (GamesFound (Right [already']))
-    map (.game) held.already === [90884965]
-    map (.game) (next held (GamesFound (Left "no"))).already === [90884965]
+    map (.number) held.already === [90884965]
+    map (.number) (next held (GamesFound (Left "no"))).already
+      === [90884965]
 
 prop_openingAGameAlreadyGoingPutsItInATabOfItsOwn :: Property
 prop_openingAGameAlreadyGoingPutsItInATabOfItsOwn =
   withTests 1 . property $ do
-    let held   = next oneGame (GamesFound (Right [already']))
-        opened = next held (InSetup 1 (ResumePressed already'))
+    let held = next oneGame (GamesFound (Right [already']))
+        went = next held (InSetup 1 (ResumePressed already'))
     -- A tab of its own, and the one that was showing is untouched.
-    map fst opened.openTabs === [1, 2]
-    opened.showing === Just 2
-    fmap (.setup) (gameIn 2 opened) === Just already'.about
+    map fst went.openTabs === [1, 2]
+    went.showing === Just 2
+    fmap (.setup) (gameIn 2 went) === Just already'.about
     -- Off the list as it opens, so the page stops offering a game that
     -- now has a tab.
-    opened.already === []
+    went.already === []
     -- Under the new tab's name, so closing that tab stops it.
     namesOf held (InSetup 1 (ResumePressed already')) === [Just "finding game-2"]
 
@@ -491,11 +493,12 @@ prop_lookingAgainAsksAgain = property $ do
 
 -- | A game offered by somebody nobody here asked.
 offer :: Invitation
-offer = Invitation { from  = "lenzuru"
-                   , about = asking { against = Online, versus = "lenzuru" }
-                   , token = 36052608
-                   , game  = 90881581
-                   }
+offer = Invitation
+  { from   = "lenzuru"
+  , about  = asking { against = Online, versus = "lenzuru" }
+  , token  = 36052608
+  , number = 90881581
+  }
 
 -- | A window with a game going and an offer waiting on it.
 invited :: State

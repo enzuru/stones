@@ -68,7 +68,7 @@ prop_aGameSaysWhoItIsAgainstAndWhichOneItIs = withTests 1 . property $ do
     Left  why       -> annotate (Text.unpack why) >> failure
     Right [already] -> do
       already.with === "amybot-beginner"
-      already.game === 90884965
+      already.number === 90884965
       already.about.against === Online
       already.about.size === 9
       -- Which colour this player has in it, so the board is the right
@@ -96,7 +96,7 @@ prop_theOtherSideOfTheSameBoardIsTheOtherPlayer =
 prop_everyGameOnThePageComesBack :: Property
 prop_everyGameOnThePageComesBack = withTests 1 . property $ do
   let found = [listed 1 9 1768491, listed 2 13 1768491, listed 3 19 1768491]
-  (map (.game) <$> read' 1768491 found) === Right [1, 2, 3]
+  (map (.number) <$> read' 1768491 found) === Right [1, 2, 3]
   -- And an empty list is a player in no games, rather than a failure.
   read' 1768491 [] === Right []
 
@@ -115,7 +115,7 @@ prop_aBoardThisProgramDoesNotPlayOnIsLeftOut = withTests 1 . property $ do
           , "white" .= object ["username" .= ("somebody" :: Text)]
           ]
         ]
-  (map (.game) <$> read' 1768491 [oblong, listed 8 9 1768491]) === Right [8]
+  (map (.number) <$> read' 1768491 [oblong, listed 8 9 1768491]) === Right [8]
 
 prop_aSpeedThatCannotBeReadIsTakenAsALiveGame :: Property
 prop_aSpeedThatCannotBeReadIsTakenAsALiveGame = withTests 1 . property $ do

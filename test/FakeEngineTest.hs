@@ -34,7 +34,7 @@ import           Stones.Setup                   ( Against(..)
                                                 , Speed(..)
                                                 , Strength(..)
                                                 )
-import           Stones.Log                     ( quiet )
+import qualified Stones.Log                    as Log
 import qualified Stones.Opponent.GnuGo           as GnuGo
 
 -- | Write a shell script that behaves like an engine, and run
@@ -81,12 +81,12 @@ babbling = "while read -r line; do printf '= nonsense\\n\\n'; done"
 
 prop_anEngineThatIsNotThereIsReported :: Property
 prop_anEngineThatIsNotThereIsReported = withTests 1 . property $ do
-  opened <- evalIO (GnuGo.open quiet "/nonexistent-engine" (board 9))
+  opened <- evalIO (GnuGo.open Log.quiet "/nonexistent-engine" (board 9))
   case opened of
     Right _  -> annotate "it started something" >> failure
     Left why -> do
       assert (Text.isPrefixOf "Could not start /nonexistent-engine" why)
-  probed <- evalIO (GnuGo.probe quiet "/nonexistent-engine" (board 9))
+  probed <- evalIO (GnuGo.probe Log.quiet "/nonexistent-engine" (board 9))
   case probed of
     Right () -> annotate "it found something" >> failure
     Left _   -> success
@@ -95,7 +95,7 @@ prop_anEngineThatRefusesTheFirstCommandDoesNotStart :: Property
 prop_anEngineThatRefusesTheFirstCommandDoesNotStart =
   withTests 1 . property $ do
     opened <- evalIO . withEngineNamed "refusing" refusing $ \path ->
-      GnuGo.open quiet path (board 9)
+      GnuGo.open Log.quiet path (board 9)
     case opened of
       Right _  -> annotate "it started" >> failure
       Left why -> assert (Text.isInfixOf "not today" why)
@@ -103,7 +103,7 @@ prop_anEngineThatRefusesTheFirstCommandDoesNotStart =
 prop_anObligingEngineCanBePlayedAgainst :: Property
 prop_anObligingEngineCanBePlayedAgainst = withTests 1 . property $ do
   answers <- evalIO . withEngineNamed "obliging" obliging $ \path ->
-    GnuGo.open quiet path (board 9) >>= \case
+    GnuGo.open Log.quiet path (board 9) >>= \case
       Left  why    -> pure (Left why)
       Right them -> do
         told    <- them.tell (Moved (Play (Coord 3 3)))
@@ -134,7 +134,7 @@ prop_anObligingEngineCanBePlayedAgainst = withTests 1 . property $ do
 prop_anEngineThatAnswersWithNonsenseIsReported :: Property
 prop_anEngineThatAnswersWithNonsenseIsReported = withTests 1 . property $ do
   answer <- evalIO . withEngineNamed "babbling" babbling $ \path ->
-    GnuGo.open quiet path (board 9) >>= \case
+    GnuGo.open Log.quiet path (board 9) >>= \case
       Left  why    -> pure (Left why)
       Right them -> do
         moved <- asking them Asked
@@ -156,7 +156,7 @@ prop_anEngineThatGoesAwayMidGameIsReported = withTests 1 . property $ do
         , "exit 0"
         ]
   answer <- evalIO . withEngineNamed "brief" brief $ \path ->
-    GnuGo.open quiet path (board 9) >>= \case
+    GnuGo.open Log.quiet path (board 9) >>= \case
       Left  why    -> pure (Left why)
       Right them -> do
         moved <- asking them Asked
@@ -174,7 +174,7 @@ prop_severalOpponentsAtOnceAndAllOfThemStopped = withTests 1 . property $ do
   -- A window with three tabs has three of these, and what is still
   -- running when the window closes is stopped with it.
   answers <- evalIO . withEngineNamed "several" obliging $ \path ->
-    GnuGo.withGnuGo quiet path $ \opponents -> do
+    GnuGo.withGnuGo Log.quiet path $ \opponents -> do
       one   <- opponents.open (board 9)
       two   <- opponents.open (board 13)
       three <- opponents.open (board 19)

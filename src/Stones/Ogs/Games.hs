@@ -32,6 +32,7 @@ import qualified Data.Text                     as Text
 import qualified Data.Text.Encoding            as Text
 import qualified Data.Vector                   as Vector
 
+import           Go.Types                       ( Color(..) )
 import           Stones.Ogs.Challenge           ( calling )
 import           Stones.Opponent                ( Ongoing(..) )
 import           Stones.Setup                   ( Against(..)
@@ -81,20 +82,20 @@ oneOf player body = do
   height <- fieldOf "height" body >>= asWhole
   black  <- fieldOf "black" body >>= asWhole
   both   <- fieldOf "players" body
-  let mine   = if player == black then "black" else "white"
-      theirs = if player == black then "white" else "black"
+  let playingBlack = player == black
+      theirs       = if playingBlack then "white" else "black" :: Text
   them <- fieldOf theirs both >>= fieldOf "username" >>= asString
   if width /= height
     then Nothing
     else Just Ongoing
-      { with  = them
-      , game  = game
-      , about = defaultSetup
+      { with   = them
+      , number = game
+      , about  = defaultSetup
         { against  = Online
         , size     = width
           -- Which colour this player has in it, so the board is the
           -- right way round before the server says so.
-        , human    = if mine == "black" then minBound else maxBound
+        , human    = if playingBlack then Black else White
         , ranked   = maybe False id (fieldOf "ranked" body >>= asBool)
         , speed    = speedIn body
         , versus   = them

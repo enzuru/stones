@@ -326,7 +326,7 @@ prop_aGameJoinedWhileItIsBeingCountedComesBackThatWay =
       Right opening -> do
         -- The stones both sides are being asked to agree are dead,
         -- read the same way as any other set of stones.
-        opening.dead === Just [Coord 0 0, Coord 1 1]
+        opening.marked === Just [Coord 0 0, Coord 1 1]
         opening.yours === Black
     -- With nothing marked yet, which is where the counting starts.
     let nothing = replacing "removed" (toJSON ("" :: Text)) counting
@@ -338,7 +338,7 @@ prop_aGameJoinedWhileItIsBeingCountedComesBackThatWay =
 
 -- | The stones an opening says are dead.
 dead :: Opening -> Maybe [Coord]
-dead opening = opening.dead
+dead opening = opening.marked
 
 -- * A game somebody offered
 -----------------------------
@@ -378,7 +378,7 @@ prop_aGameSomebodyOffersSaysWhoAndWhatAndHowToAnswer =
         -- The offer's own number is what to answer with, and the game
         -- is one the server picked before anybody said yes.
         offer.token === 36052608
-        offer.game === 90881581
+        offer.number === 90881581
         -- And what it is, in the terms the rest of this program uses.
         offer.about.against === Online
         offer.about.size === 19
@@ -665,7 +665,7 @@ prop_aHandicapGameStartsWithStonesDownAndWhiteToMove =
                         , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
                         , opens  = White
                         , yours  = Black
-                            , dead   = Nothing
+                        , marked = Nothing
                         }
 
 prop_whichColourThePlayerHasComesFromTheirNumber :: Property
@@ -693,7 +693,7 @@ prop_aGameUnderWayIsPlayedOutRatherThanTakenAsRead =
                         , stones = [(Black, Coord 3 3), (White, Coord 5 5)]
                         , opens  = Black
                         , yours  = White
-                            , dead   = Nothing
+                        , marked = Nothing
                         }
 
 prop_aGameTheseRulesRefuseIsSaidSoRatherThanHalfTaken :: Property
@@ -733,7 +733,7 @@ prop_theGameArrivesBeforeAnythingElseDoes = withTests 1 . property $ do
                          , stones = [(Black, Coord 2 2), (Black, Coord 6 6)]
                          , opens  = White
                          , yours  = Black
-                            , dead   = Nothing
+                         , marked = Nothing
                          }
           )
 

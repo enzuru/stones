@@ -211,8 +211,8 @@ resuming
 resuming log' outside who held already = readIORef who >>= \case
   Nothing     -> pure (Left "Sign in to online-go.com first.")
   Just signed -> do
-    log'.note ("going back into game " <> Text.pack (show already.game))
-    opening log' outside held signed already.game
+    log'.note ("going back into game " <> Text.pack (show already.number))
+    opening log' outside held signed already.number
 
 -- | Take a game somebody offered.
 --
@@ -233,11 +233,11 @@ taking log' outside who held offer = readIORef who >>= \case
     Right () -> do
       log'.note
         (  "took the game "
-        <> Text.pack (show offer.game)
+        <> Text.pack (show offer.number)
         <> " offered by "
         <> offer.from
         )
-      opening log' outside held signed offer.game
+      opening log' outside held signed offer.number
 
 -- | A connection of this game's own, signed in, and the game joined on
 -- it.

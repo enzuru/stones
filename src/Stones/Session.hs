@@ -466,7 +466,7 @@ began :: Session -> Opening -> Step
 began session opening
   -- Joined while the game was being counted. Nobody moves again, so
   -- nobody is asked to, and the board takes marks rather than moves.
-  | isJust opening.dead = stay settled
+  | isJust opening.marked = stay settled
   | started.turn == opening.yours = stay settled
   | otherwise = case listening session of
     -- The game starts on the other side's move, which is what a
@@ -479,7 +479,7 @@ began session opening
   settled = session { game  = started
                     , human = opening.yours
                     , note  = Nothing
-                    , dead  = opening.dead
+                    , dead  = opening.marked
                     }
 
 -- | A move arrived. It is played here if it is the move this board is

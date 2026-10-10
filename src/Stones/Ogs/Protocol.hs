@@ -233,7 +233,7 @@ openingFrom player body = do
     , stones = standing reached.board
     , opens  = reached.turn
     , yours  = if player == black then Black else White
-    , dead   = counting
+    , marked = counting
     }
  where
   -- A game joined part way through the counting at the end. The marked
@@ -434,8 +434,8 @@ invitationFrom player name arguments = do
                              , speed    = speedIn body
                              , versus   = who
                              }
-      , token = offer
-      , game  = game
+      , token  = offer
+      , number = game
       }
 
 -- | A yes or a no, if that is what this is.
