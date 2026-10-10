@@ -1,8 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
 
 -- | Every test the program has.
 --
@@ -15,7 +13,8 @@ module Main
 where
 
 import           Control.Monad                  ( unless )
-import           Hedgehog                       ( checkParallel
+import           Hedgehog                       ( Group
+                                                , checkParallel
                                                 , checkSequential
                                                 )
 import           System.Exit                    ( exitFailure )
@@ -49,7 +48,7 @@ main :: IO ()
 main = do
   properties <- and <$> mapM
     checkParallel
-    [ TypesTest.tests
+    ([ TypesTest.tests
     , BoardTest.tests
     , GameTest.tests
     , VertexTest.tests
@@ -71,7 +70,8 @@ main = do
     , SetupTest.tests
     , SessionTest.tests
     , AppTest.tests
-    ]
+    ] :: [Group]
+    )
   -- One at a time, on its own.
   --
   -- Each of these writes a shell script and runs it. A program that

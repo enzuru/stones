@@ -1,10 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | What the board draws, and what it does with a click.
 --
@@ -74,7 +70,7 @@ blank = ByteString.all (== 0)
 
 prop_everyBoardSizeDrawsSomething :: Property
 prop_everyBoardSizeDrawsSomething = property $ do
-  n       <- forAll (Gen.element [9, 13, 19])
+  n       <- forAll (Gen.element ([9, 13, 19] :: [Int]))
   surface <- evalIO (drawn shown { board = emptyBoard n })
   assert (not (blank surface))
 

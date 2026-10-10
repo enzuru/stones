@@ -1,11 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE TemplateHaskell       #-}
 
 -- | What this program writes down, and what it does not.
 --
@@ -84,7 +79,7 @@ prop_aSecretIsHiddenHoweverDeepItIs = property $ do
         [ Key.fromText hidden .= ("nobody-should-see-this" :: Text)
         , "keep" .= ("this one is fine" :: Text)
         ]
-      buried n = object ["under" .= [buried (n - 1 :: Int)]]
+      buried n = object ["under" .= ([buried (n - 1 :: Int)] :: [Value])]
       shown'   = Text.pack (show (guarding (buried depth)))
   -- However far down it was put, and whatever it was under.
   assert (not (Text.isInfixOf "nobody-should-see-this" shown'))

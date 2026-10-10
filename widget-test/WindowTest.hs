@@ -1,11 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedLabels  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | The window as GTK builds it.
 --
@@ -235,7 +230,7 @@ prop_pickingALevelFromTheListReportsIt = withTests 1 . property $ do
     heard <- newIORef []
     made  <- runUI (create (view' onePage))
     watching <- runUI
-      (subscribe (view' onePage) made (\event -> modifyIORef' heard (<> [event])))
+      (subscribe (view' onePage) made (\event -> modifyIORef' heard (<> ([event] :: [Event]))))
     runUI $ do
       combos <- descendantsOf Adw.ComboRow =<< widgetOf made
       case combos of
@@ -442,13 +437,14 @@ prop_startingAGameTurnsThePageIntoABoard = withTests 1 . property $ do
 beingCounted :: State
 beingCounted = foldl (\state event -> next state (InTab 1 event))
                  oneGame
-                 [ Clicked (Coord 0 0)
-                 , Arrived (Played White (Play (Coord 8 8)))
-                 , Arrived (Played White Pass)
-                 , Passed
-                 , Arrived Stopped
-                 , Arrived (Removing [Coord 8 8])
-                 ]
+                 ([ Clicked (Coord 0 0)
+                  , Arrived (Played White (Play (Coord 8 8)))
+                  , Arrived (Played White Pass)
+                  , Passed
+                  , Arrived Stopped
+                  , Arrived (Removing [Coord 8 8])
+                  ] :: [SessionEvent]
+                 )
 
 prop_aGameBeingCountedStillBuildsAWindow :: Property
 prop_aGameBeingCountedStillBuildsAWindow = withTests 1 . property $ do
@@ -478,10 +474,11 @@ talking :: State
 talking = foldl
   (\state event -> next state event)
   oneGame
-  [ InTab 1 (Arrived (Spoke "hikaru" "good game"))
-  , InTab 1 (Arrived (Spoke "nobody" "thanks, you too"))
-  , ChatToggled True
-  ]
+  ([ InTab 1 (Arrived (Spoke "hikaru" "good game"))
+   , InTab 1 (Arrived (Spoke "nobody" "thanks, you too"))
+   , ChatToggled True
+   ] :: [Event]
+  )
 
 prop_thePaneShowsWhatWasSaidAndALineToSayOn :: Property
 prop_thePaneShowsWhatWasSaidAndALineToSayOn = withTests 1 . property $ do
@@ -540,7 +537,7 @@ prop_thePaneStaysAtTheNewestMessage = withTests 1 . property $ do
     -- A few turns of the loop, which is what it takes to go from a
     -- window being presented to its contents being laid out and the
     -- scrolling that follows the laying out.
-    mapM_ (const settle) [1 .. 20 :: Int]
+    mapM_ (const settle) ([1 .. 20] :: [Int])
     runUI $ do
       scrollers <- descendantsOf Gtk.ScrolledWindow =<< Gtk.toWidget window
       answer    <- case scrollers of

@@ -1,11 +1,7 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NoFieldSelectors      #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings     #-}
 
 -- | Looking for somebody to play against.
 --
@@ -83,7 +79,7 @@ finding seek = Event
   "automatch/find_match"
   [ object
       [ "uuid" .= seek.name
-      , "size_speed_options" .= [option]
+      , "size_speed_options" .= ([option] :: [Value])
       , "lower_rank_diff" .= (3 :: Int)
       , "upper_rank_diff" .= (3 :: Int)
       , "rules" .= object

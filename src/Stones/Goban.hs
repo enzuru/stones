@@ -1,14 +1,7 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE NoFieldSelectors      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedLabels    #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | The board, as a widget that draws itself and reports where it was
 -- clicked.
@@ -409,8 +402,10 @@ drawGrid :: Palette -> Geometry -> Cairo.Render ()
 drawGrid Palette { line = (r, g, b) } geo = do
   Cairo.setSourceRGB r g b
   Cairo.setLineCap Cairo.LineCapSquare
-  mapM_ column [0 .. n - 1]
-  mapM_ row    [0 .. n - 1]
+  -- Annotated because a list literal is overloaded here, so a bare
+  -- range has nothing to say what it is a range of.
+  mapM_ column ([0 .. n - 1] :: [Int])
+  mapM_ row    ([0 .. n - 1] :: [Int])
  where
   n    = geo.size
   thin = max 0.7 (geo.step * 0.035)
@@ -454,7 +449,7 @@ drawLabels Palette { label = (r, g, b) } geo = do
   -- Over the letters themselves rather than over the numbers of the
   -- columns, so that there is no counting to get wrong.
   mapM_ column (zip [0 ..] (columnLetters n))
-  mapM_ row    [0 .. n - 1]
+  mapM_ row    ([0 .. n - 1] :: [Int])
  where
   n = geo.size
   column (i, letter) = centred (columnLabelAt geo i) (Text.singleton letter)

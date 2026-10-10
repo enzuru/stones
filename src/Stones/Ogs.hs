@@ -1,7 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE OverloadedStrings #-}
 
 -- | Where online-go.com is, and who this program says it is.
 module Stones.Ogs

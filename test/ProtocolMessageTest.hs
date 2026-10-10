@@ -1,10 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | What this program says to online-go.com about a game, and what it
 -- makes of what comes back.
@@ -54,7 +50,7 @@ point size = Coord <$> Gen.int (Range.linear 0 (size - 1)) <*> Gen.int
 
 -- | A move as it arrives: a column, a row, and how long it took.
 arriving :: Int -> Int -> Value
-arriving x y = toJSON [x, y, 0 :: Int]
+arriving x y = toJSON ([x, y, 0] :: [Int])
 
 -- | The payload of a move that arrived.
 moveEvent :: Int -> Value -> Value
@@ -97,7 +93,7 @@ prop_aMoveOffTheBoardIsAPass = withTests 1 . property $ do
   -- And what is not a move at all is refused rather than guessed at.
   assert (isLeft (decodeMove (toJSON ([] :: [Int]))))
   assert (isLeft (decodeMove (toJSON ("dd" :: Text))))
-  assert (isLeft (decodeMove (toJSON [Null])))
+  assert (isLeft (decodeMove (toJSON ([Null] :: [Value]))))
 
 prop_whoMovedIsWorkedOutFromWhoOpened :: Property
 prop_whoMovedIsWorkedOutFromWhoOpened = withTests 1 . property $ do
@@ -185,7 +181,7 @@ prop_theFirstMoveOfAGameBelongsToWhoeverOpenedIt =
     let asSent = object
           [ "game_id" .= (1234 :: Int)
           , "move_number" .= (1 :: Int)
-          , "move" .= toJSON [4, 4, 5592 :: Int]
+          , "move" .= toJSON ([4, 4, 5592] :: [Int])
           ]
     incoming table "game/1234/move" [asSent]
       === Just (Played Black (Play (Coord 4 4)))
@@ -690,7 +686,7 @@ prop_aGameUnderWayIsPlayedOutRatherThanTakenAsRead =
           , "initial_player" .= ("black" :: Text)
           , "black_player_id" .= (88 :: Int)
           , "white_player_id" .= (77 :: Int)
-          , "moves" .= [arriving 3 3, arriving 5 5]
+          , "moves" .= ([arriving 3 3, arriving 5 5] :: [Value])
           ]
     openingFrom 77 started
       === Right Opening { width  = 9
@@ -708,7 +704,7 @@ prop_aGameTheseRulesRefuseIsSaidSoRatherThanHalfTaken =
           , "initial_player" .= ("black" :: Text)
           , "black_player_id" .= (88 :: Int)
           , "white_player_id" .= (77 :: Int)
-          , "moves" .= [arriving 3 3, arriving 3 3]
+          , "moves" .= ([arriving 3 3, arriving 3 3] :: [Value])
           ]
     case openingFrom 77 impossible of
       Left why -> assert (Text.isInfixOf "refuse" why)
@@ -721,7 +717,8 @@ prop_howFarAlongAGameIsAndWhoOpenedIt :: Property
 prop_howFarAlongAGameIsAndWhoOpenedIt = withTests 1 . property $ do
   countFrom handicapGame === Just 0
   openerFrom handicapGame === Just White
-  countFrom (object ["moves" .= [arriving 3 3, arriving 5 5]]) === Just 2
+  countFrom (object ["moves" .= ([arriving 3 3, arriving 5 5] :: [Value])])
+    === Just 2
   openerFrom (object ["initial_player" .= ("black" :: Text)]) === Just Black
   countFrom (object []) === Nothing
   openerFrom (object []) === Nothing

@@ -1,10 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE TemplateHaskell       #-}
 
 -- | Clocks: the seconds coming off one, and how one reads.
 --
@@ -44,7 +40,7 @@ clock :: Gen Clock
 clock = do
   black   <- time
   white   <- time
-  running <- Gen.element [Nothing, Just Black, Just White]
+  running <- Gen.element ([Nothing, Just Black, Just White] :: [Maybe Color])
   pure Clock { black = black, white = white, running = running }
 
 -- | Everything one side has left, the short periods included.

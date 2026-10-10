@@ -1,8 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | Reading and writing the frames the online-go.com socket carries.
 --
@@ -41,7 +39,7 @@ value = Gen.choice
 -- | A name of the shape this server uses.
 name :: Gen Text
 name = Gen.element
-  ["game/move", "game/connect", "game/chat", "chat/join", "net/ping"]
+  (["game/move", "game/connect", "game/chat", "chat/join", "net/ping"] :: [Text])
 
 -- | The frames this program sends. 'Open' is not among them, because
 -- only a server sends one.
@@ -107,7 +105,7 @@ prop_aMoveArrivesAsAnEventWithItsGameInTheName =
               "game/1234/move"
               [ object
                   [ "move_number" .= (1 :: Int)
-                  , "move" .= [3 :: Int, 3, 0]
+                  , "move" .= ([3, 3, 0] :: [Int])
                   ]
               ]
               Nothing

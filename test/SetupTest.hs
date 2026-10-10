@@ -1,10 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE TemplateHaskell       #-}
 
 -- | What a game is started from.
 module SetupTest
@@ -24,10 +20,10 @@ choice :: Gen SetupEvent
 choice = Gen.choice
   [ ChosePlace <$> Gen.element places
   , ChoseSpeed <$> Gen.element speeds
-  , ChoseRanked <$> Gen.element [False, True]
+  , ChoseRanked <$> Gen.element ([False, True] :: [Bool])
   , ChoseHandicapping <$> Gen.element handicappings
   , ChoseBoard <$> Gen.element boardWidths
-  , ChoseSide <$> Gen.element [Black, White]
+  , ChoseSide <$> Gen.element ([Black, White] :: [Color])
   , ChoseStrength <$> Gen.element strengths
   , ChoseHandicap <$> Gen.element handicaps
   , pure StartPressed

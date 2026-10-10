@@ -30,13 +30,49 @@ GTKD := $(DECLARATIVE)/gi-gtk4-declarative/src \
         $(DECLARATIVE)/gi-gtk4-declarative-adwaita/src
 INCLUDES := $(addprefix -i,$(SRC) $(GTKD))
 
-# The cabal file says Haskell2010, so the direct GHC calls say it too,
-# rather than building against the newer default and finding out later.
+# What every module here is written against, said once rather than at
+# the top of all forty-seven of them. The cabal file says the same, in
+# default-extensions, so the two builds agree.
+#
+# NoFieldSelectors is not among them, and cannot be: these flags reach
+# the declarative layer as well, which this file compiles from source,
+# and that layer uses its field selectors as functions. The modules
+# here that want it say so themselves.
+EXTENSIONS := \
+  -XDuplicateRecordFields \
+  -XOverloadedLabels \
+  -XOverloadedLists \
+  -XOverloadedRecordDot \
+  -XOverloadedStrings \
+  -XRecordWildCards \
+  -XTemplateHaskell
+
+# What the declarative layer's own cabal file turns on for its library,
+# which its modules therefore do not mention. Compiling it from source
+# rather than as a package means saying them here, and this list has to
+# follow that one.
+DECLARATIVE_EXTENSIONS := \
+  -XAllowAmbiguousTypes \
+  -XDefaultSignatures \
+  -XFunctionalDependencies \
+  -XMultiWayIf \
+  -XTypeFamilies \
+  -XUndecidableInstances
+
+# GHC2024, because the declarative layer is GHC2024 and this file
+# compiles it alongside Stones. Its modules lean on that edition for a
+# bare `forall` and for promoted constructors, and say so nowhere,
+# because their cabal file says it for them. An older edition here does
+# not ask less of Stones, it asks the impossible of the library: this
+# build worked only while interface files from an older one were lying
+# about, and failed as soon as the build directory was emptied.
+#
 # A record built without all of its fields is a warning by default and
 # an exception when the field is read, which is a long way from where
 # the field was left out. A field added to a record is exactly when
 # that happens, so it is an error here.
-WARNINGS := -Wall -Werror=missing-fields -XHaskell2010
+WARNINGS := -Wall -Werror=missing-fields -XGHC2024 \
+            $(EXTENSIONS) $(DECLARATIVE_EXTENSIONS)
 
 # Two packages in the dev shell hold a module called GI.Gtk: gi-gtk,
 # which is the one the cabal file names, and gi-gtk4, a copy of it under

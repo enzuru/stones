@@ -1,9 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE TemplateHaskell     #-}
 
 -- | Who a token belongs to, and signing a connection in as them.
 --
@@ -84,7 +81,7 @@ prop_signingInPutsThatOnTheConnection = withTests 1 . property $ do
   (outcome, written) <- evalIO $ do
     sent <- newIORef []
     let connection = Socket
-          { put   = \packet -> Right () <$ modifyIORef' sent (<> [packet])
+          { put   = \packet -> Right () <$ modifyIORef' sent (<> ([packet] :: [Packet]))
           , heard = pure ()
           , stop  = pure ()
           }

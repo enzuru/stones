@@ -1,10 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE TemplateHaskell       #-}
 
 -- | Challenging somebody in particular.
 --
@@ -95,7 +91,7 @@ prop_aGameCountsTowardsARankOnlyWhenItIsAskedTo =
 
 prop_theBoardIsTheOneThatWasChosen :: Property
 prop_theBoardIsTheOneThatWasChosen = property $ do
-  size <- forAll (Gen.element [9, 13, 19])
+  size <- forAll (Gen.element ([9, 13, 19] :: [Int]))
   let setup = wanted { size = size }
   ofGame setup "width" === Just (Number (fromIntegral size))
   ofGame setup "height" === Just (Number (fromIntegral size))

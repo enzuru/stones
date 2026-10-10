@@ -1,9 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 -- | Where the board is drawn, and what a click lands on.
 module GeometryTest
@@ -21,7 +18,7 @@ import           Stones.Goban.Geometry
 -- | A board, a widget size, and a point on that board.
 scene :: Gen (Int, Double, Double, Coord)
 scene = do
-  n      <- Gen.element [9, 13, 19]
+  n      <- Gen.element ([9, 13, 19] :: [Int])
   width  <- Gen.double (Range.linearFrac 200 1600)
   height <- Gen.double (Range.linearFrac 200 1600)
   x      <- Gen.int (Range.linear 0 (n - 1))

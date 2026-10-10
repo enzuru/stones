@@ -1,10 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | The names the protocol gives to points.
 module VertexTest
@@ -22,7 +18,7 @@ import           Go.Vertex
 -- | A board width and a point on a board that wide.
 pointOn :: Gen (Int, Coord)
 pointOn = do
-  n <- Gen.element [9, 13, 19]
+  n <- Gen.element ([9, 13, 19] :: [Int])
   x <- Gen.int (Range.linear 0 (n - 1))
   y <- Gen.int (Range.linear 0 (n - 1))
   pure (n, Coord x y)

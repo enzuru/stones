@@ -1,11 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE TemplateHaskell       #-}
 
 -- | What each thing that happens turns one game into.
 --
@@ -297,19 +292,19 @@ prop_aGameJoinedMidCountIsCountedRatherThanPlayed =
     -- Opened out of the games this player is already in, part way
     -- through the counting at the end. A board handed over as playable
     -- then is a board that takes clicks the server will refuse.
-    let opening = Opening { width  = 9
+    let counted = Opening { width  = 9
                           , stones = [(Black, Coord 0 0), (White, Coord 8 8)]
                           , opens  = White
                           , yours  = Black
                           , dead   = Just [Coord 8 8]
                           }
-        joined  = after game (Arrived (Began opening))
+        joined  = after game (Arrived (Began counted))
     settling joined === True
     deadIn joined === [Coord 8 8]
     playable joined === False
     -- And nobody is asked to move, because nobody moves again.
     said <- saying (\them -> opened them (starting (board Black 9)))
-                   [Arrived (Began opening)]
+                   [Arrived (Began counted)]
     said === []
 
 prop_aGameJoinedWhileStillGoingIsPlayedAsUsual :: Property
@@ -317,15 +312,15 @@ prop_aGameJoinedWhileStillGoingIsPlayedAsUsual =
   withTests 1 . property $ do
     -- The same payload with nothing marked on it. The other side is
     -- asked, because the game starts on their move.
-    let opening = Opening { width  = 9
-                          , stones = [(Black, Coord 0 0)]
-                          , opens  = White
-                          , yours  = Black
-                          , dead   = Nothing
-                          }
-    settling (after game (Arrived (Began opening))) === False
+    let going = Opening { width  = 9
+                        , stones = [(Black, Coord 0 0)]
+                        , opens  = White
+                        , yours  = Black
+                        , dead   = Nothing
+                        }
+    settling (after game (Arrived (Began going))) === False
     said <- saying (\them -> opened them (starting (board Black 9)))
-                   [Arrived (Began opening)]
+                   [Arrived (Began going)]
     said === [Asked]
 
 -- * Talking
@@ -432,13 +427,14 @@ prop_whatIsSaidIsNotWrittenDownUntilItComesBack =
 stoppedFrom :: Session -> Session
 stoppedFrom start = foldl after
                           start
-                          [ Clicked (Coord 0 0)
-                          , Arrived (Played White (Play (Coord 8 8)))
-                          , Clicked (Coord 0 1)
-                          , Arrived (Played White Pass)
-                          , Passed
-                          , Arrived Stopped
-                          ]
+                          ([ Clicked (Coord 0 0)
+                           , Arrived (Played White (Play (Coord 8 8)))
+                           , Clicked (Coord 0 1)
+                           , Arrived (Played White Pass)
+                           , Passed
+                           , Arrived Stopped
+                           ] :: [SessionEvent]
+                          )
 
 -- | The same, against the opponent that says nothing.
 stopped :: Session
@@ -562,7 +558,7 @@ sameBoardAs one other = do
 -- down the other, so nothing is ever captured and the count of stones
 -- is the count of moves.
 playedOut :: Int -> Session
-playedOut rounds = foldl answered start [1 .. rounds]
+playedOut rounds = foldl answered start ([1 .. rounds] :: [Int])
  where
   -- A full board, so that a dozen rounds down one side still fit.
   start = landed (opened silent { talks = False } (starting (board Black 19)))
@@ -593,7 +589,7 @@ prop_undoGoesBackOneRoundPerPress = property $ do
   presses <- forAll (Gen.int (Range.linear 1 8))
   let undone = foldl (\session _ -> after session UndoPressed)
                      (playedOut rounds)
-                     [1 .. presses]
+                     ([1 .. presses] :: [Int])
       left   = max 0 (rounds - presses)
   -- Pressing it twice goes back two rounds and not four, and pressing
   -- it on an empty board does nothing at all.

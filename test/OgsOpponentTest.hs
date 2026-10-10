@@ -1,10 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE TemplateHaskell     #-}
 
 -- | A game on online-go.com, as an opponent like any other.
 --
@@ -128,7 +124,7 @@ moveEvent number x y = Event
   [ object
       [ "game_id" .= game
       , "move_number" .= number
-      , "move" .= toJSON [x, y, 0 :: Int]
+      , "move" .= toJSON ([x, y, 0] :: [Int])
       ]
   ]
   Nothing
@@ -255,7 +251,7 @@ prop_whatIsNotAboutThisGameIsNotHeard = withTests 1 . property $ do
           "game/9999/move"
           [ object
               [ "move_number" .= (0 :: Int)
-              , "move" .= toJSON [3, 3, 0 :: Int]
+              , "move" .= toJSON ([3, 3, 0] :: [Int])
               ]
           ]
           Nothing
@@ -353,7 +349,7 @@ prop_howFarAlongTheGameIsComesFromTheServerToo =
               , "initial_player" .= ("black" :: Text)
               , "black_player_id" .= (77 :: Int)
               , "white_player_id" .= (88 :: Int)
-              , "moves" .= [toJSON [3, 3, 0 :: Int], toJSON [5, 5, 0 :: Int]]
+              , "moves" .= ([toJSON ([3, 3, 0] :: [Int]), toJSON ([5, 5, 0] :: [Int])] :: [Value])
               ]
           ]
           Nothing

@@ -1,8 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
 
 -- | The tests that need GTK.
 --
@@ -23,7 +21,9 @@ import           Control.Concurrent
 import           Control.Monad                  ( unless )
 import qualified GI.Adw                        as Adw
 import qualified GI.GLib                       as GLib
-import           Hedgehog                       ( checkSequential )
+import           Hedgehog                       ( Group
+                                                , checkSequential
+                                                )
 import           System.Environment             ( lookupEnv
                                                 , setEnv
                                                 )
@@ -50,8 +50,9 @@ main = do
   _      <- forkOS $ do
     -- Sequentially: every one of these hands work to the main loop and
     -- waits for it, and two of them doing that at once would deadlock.
-    results <- traverse checkSequential
-                        [WindowTest.tests, GobanWidgetTest.tests, IconTest.tests]
+    results <- traverse
+      checkSequential
+      ([WindowTest.tests, GobanWidgetTest.tests, IconTest.tests] :: [Group])
     GLib.mainLoopQuit loop
     putMVar passed (and results)
   GLib.mainLoopRun loop

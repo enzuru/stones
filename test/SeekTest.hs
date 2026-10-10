@@ -1,9 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE TemplateHaskell     #-}
 
 -- | Looking for somebody to play against.
 module SeekTest
@@ -51,12 +48,13 @@ prop_askingSaysWhatKindOfGameIsWanted = withTests 1 . property $ do
           "automatch/find_match"
           [ object
               [ "uuid" .= ("a-name" :: Text)
-              , "size_speed_options" .= [ object
-                    [ "size" .= ("9x9" :: Text)
-                    , "speed" .= ("blitz" :: Text)
-                    , "system" .= ("byoyomi" :: Text)
-                    ]
-                  ]
+              , "size_speed_options" .= ([ object
+                      [ "size" .= ("9x9" :: Text)
+                      , "speed" .= ("blitz" :: Text)
+                      , "system" .= ("byoyomi" :: Text)
+                      ]
+                    ] :: [Value]
+                  )
               , "lower_rank_diff" .= (3 :: Int)
               , "upper_rank_diff" .= (3 :: Int)
               , "rules" .= object
@@ -76,7 +74,7 @@ prop_aHandicapIsAskedForRatherThanCounted = property $ do
   -- Nobody picks how many. The ranks decide that, and the server says
   -- where a game starts when it is joined, stones and all, so what is
   -- asked for here is whether to be paired into one at all.
-  size <- forAll (Gen.element [9, 13, 19])
+  size <- forAll (Gen.element ([9, 13, 19] :: [Int]))
   fast <- forAll (Gen.element speeds)
   how  <- forAll (Gen.element handicappings)
   let asked = Seek

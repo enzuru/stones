@@ -1,10 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | The values a game of Go is made of.
 module TypesTest
@@ -19,7 +15,7 @@ import qualified Hedgehog.Gen                  as Gen
 import           Go.Types
 
 colour :: Gen Color
-colour = Gen.element [Black, White]
+colour = Gen.element ([Black, White] :: [Color])
 
 prop_theOtherPlayerIsTheOtherPlayer :: Property
 prop_theOtherPlayerIsTheOtherPlayer = property $ do
@@ -54,7 +50,9 @@ prop_theTwoSidesAreCountedApart = withTests 1 . property $ do
 prop_everyRefusalHasSomethingToSay :: Property
 prop_everyRefusalHasSomethingToSay = property $ do
   reason <- forAll
-    (Gen.element [OffBoard, Occupied, Suicide, KoRepeat, WrongPlayer, GameOver])
+    (Gen.element
+      ([OffBoard, Occupied, Suicide, KoRepeat, WrongPlayer, GameOver] :: [Illegal])
+    )
   let said = describeIllegal reason
   -- A sentence the player can read, rather than the name of a
   -- constructor.

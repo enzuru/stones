@@ -1,11 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedLabels  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | The board as a widget.
 --
@@ -133,7 +128,7 @@ prop_aBoardCanBeBuiltForEverySize = withTests 1 . property $ do
       made <- create (board empty' { board = emptyBoard n })
       Gtk.castTo Gtk.DrawingArea =<< widgetOf made
     )
-    [9, 13, 19]
+    ([9, 13, 19] :: [Int])
   assert (all (/= Nothing) areas)
 
 prop_aBoardOnTheScreenDrawsItself :: Property
@@ -152,7 +147,7 @@ prop_aBoardOnTheScreenDrawsItself = withTests 1 . property $ do
       pure window
     -- A few turns of the loop, which is what it takes to go from a
     -- window being presented to its contents being drawn.
-    mapM_ (const settle) [1 .. 20 :: Int]
+    mapM_ (const settle) ([1 .. 20] :: [Int])
     mapped <- runUI $ do
       mapped <- Gtk.widgetGetMapped window
       Gtk.windowDestroy window

@@ -1,10 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | The tabs: which games are open, which one is showing, and where
 -- each answer belongs.
@@ -354,7 +350,7 @@ prop_startingOverAsksForWhatTheGameWasStartedFrom =
     -- old game meant the old game.
     asked <- evalIO (newIORef [])
     let noting = source
-          { open = \setup -> Right program <$ modifyIORef' asked (<> [setup])
+          { open = \setup -> Right program <$ modifyIORef' asked (<> ([setup] :: [Setup]))
           }
         started' = next (started 1 (next (startingState noting asking) NewTabPressed))
                         (TabOpened 1 (Right program))
@@ -372,7 +368,7 @@ prop_playingAgainOnAServerAsksTheSamePlayer = property $ do
   asked <- evalIO (newIORef [])
   let stranger = silent { name = "hikaru", again = Just "hikaru" }
       noting   = source
-        { open = \setup -> Right stranger <$ modifyIORef' asked (<> [setup])
+        { open = \setup -> Right stranger <$ modifyIORef' asked (<> ([setup] :: [Setup]))
         }
       played = next
         (started 1 (next (startingState noting asking) NewTabPressed))
@@ -565,7 +561,7 @@ prop_noMoreOffersAreKeptThanAnybodyReads = property $ do
   let piled = foldl
         (\state n -> next state (InTab 1 (Arrived (Invited offer { token = n }))))
         oneGame
-        [1 .. many]
+        ([1 .. many] :: [Int])
   assert (length piled.offers <= asidesKept)
   assert (length piled.offers == min many asidesKept)
 
@@ -617,7 +613,7 @@ prop_theSameWordsTwiceAreTwoThingsToShow = withTests 1 . property $ do
   -- alone, so two of these under one name would be shown once.
   let twice = foldl (\state _ -> next state (InTab 2 (Arrived (Spoke "hikaru" "hello"))))
                     bothOpen
-                    [1 .. 2 :: Int]
+                    ([1 .. 2] :: [Int])
   length twice.asides === 2
   length (List.nub (map (.key) twice.asides)) === 2
 
@@ -629,7 +625,7 @@ prop_noMoreAreKeptThanAnybodyReads = property $ do
           next state (InTab 2 (Arrived (Spoke "hikaru" (Text.pack (show n)))))
         )
         bothOpen
-        [1 .. many]
+        ([1 .. many] :: [Int])
   -- The list only shrinks when the overlay says one has gone, so it is
   -- capped rather than trusted.
   assert (length said.asides <= asidesKept)
@@ -750,7 +746,7 @@ prop_aSourceMadeOfTwoPicksByWhereTheGameIsPlayed :: Property
 prop_aSourceMadeOfTwoPicksByWhereTheGameIsPlayed = property $ do
   asked' <- evalIO (newIORef [])
   let noting what = Opponents
-        { open  = \_ -> Right silent <$ modifyIORef' asked' (<> [what])
+        { open  = \_ -> Right silent <$ modifyIORef' asked' (<> ([what] :: [Text]))
         , close = \_ -> pure ()
         , take' = \_ -> pure (Right silent)
         , ongoing = pure (Right [])
@@ -776,13 +772,14 @@ prop_aSourceMadeOfTwoPicksByWhereTheGameIsPlayed = property $ do
 beingCounted :: Session
 beingCounted = foldl onceMore
                      inPlay
-                     [ Clicked (Coord 0 0)
-                     , Arrived (Played White (Play (Coord 8 8)))
-                     , Arrived (Played White Pass)
-                     , Passed
-                     , Arrived Stopped
-                     , Arrived (Removing [Coord 8 8])
-                     ]
+                     ([ Clicked (Coord 0 0)
+                      , Arrived (Played White (Play (Coord 8 8)))
+                      , Arrived (Played White Pass)
+                      , Passed
+                      , Arrived Stopped
+                      , Arrived (Removing [Coord 8 8])
+                      ] :: [SessionEvent]
+                     )
 
 prop_theTitleSaysToCountTheGame :: Property
 prop_theTitleSaysToCountTheGame = withTests 1 . property $ do
@@ -832,7 +829,7 @@ twoGames =
 
 -- | Two games, both timed.
 bothTimed :: State
-bothTimed = foldl arrive twoGames [1, 2]
+bothTimed = foldl arrive twoGames ([1, 2] :: [TabId])
   where arrive state tab = next state (InTab tab (Arrived (Ticked onTheClock)))
 
 prop_aSecondGoesByInEveryGameAtOnce :: Property
@@ -869,7 +866,7 @@ prop_theSecondsAreOnlyCountedWhileThereIsAClockToCountThem =
   counts state = "clock" `elem` map subKey (listeners state)
   -- Both games paused, which is what a correspondence game does for
   -- somebody's holiday.
-  paused state = foldl stop state [1, 2]
+  paused state = foldl stop state ([1, 2] :: [TabId])
   stop state tab =
     next state (InTab tab (Arrived (Ticked onTheClock { running = Nothing })))
 

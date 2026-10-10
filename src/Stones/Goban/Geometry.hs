@@ -1,8 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Elias Khanzada
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE NoFieldSelectors      #-}
 
 -- | Where the lines and the stones of a board go, in the space a
